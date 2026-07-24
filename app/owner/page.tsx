@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type Horse = {
@@ -33,11 +33,9 @@ export default function OwnerPage() {
   const [horses, setHorses] = useState<Horse[]>([]);
   const [availableRaces, setAvailableRaces] = useState<Race[]>([]);
 
-  // レース申請用
   const [selectedHorseId, setSelectedHorseId] = useState("");
   const [selectedRaceName, setSelectedRaceName] = useState("");
 
-  // AIチャット用
   const [messages, setMessages] = useState<{ sender: "user" | "ai"; text: string }[]>([]);
   const [inputMessage, setInputMessage] = useState("");
 
@@ -99,7 +97,6 @@ export default function OwnerPage() {
     }
   };
 
-  // 🏇 馬券の `races` テーブルから登録済みレース名を自動連動取得！
   const fetchRaces = async () => {
     const { data } = await supabase.from("races").select("*");
     if (data && data.length > 0) {
@@ -108,7 +105,6 @@ export default function OwnerPage() {
     }
   };
 
-  // 🏁 レース出走の申請
   const handleApplyRace = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedHorseId || !selectedRaceName) {
@@ -132,6 +128,17 @@ export default function OwnerPage() {
     }
   };
 
+  // 🛑 馬主からの自主引退申請
+  const handleRequestRetirement = async (horse: Horse) => {
+    if (!confirm(`本当に「${horse.name}」の引退申請を送信しますか？管理者画面へ送られます。`)) return;
+
+    const { error } = await supabase.from("horses").update({ status: "引退申請中" }).eq("id", horse.id);
+    if (!error) {
+      alert("引退申請を管理者に送信しました。承認完了までお待ちください。");
+      fetchOwnerHorses(ownerId);
+    }
+  };
+
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
@@ -144,8 +151,8 @@ export default function OwnerPage() {
       let aiResponse = "なるほど、了解いたしました。しっかり調整しておきます！";
       if (userText.includes("調子") || userText.includes("状態")) {
         aiResponse = "愛馬たちの毛ツヤも良く、追い切りも非常に良いタイムが出ていますよ！";
-      } else if (userText.includes("レース") || userText.includes("次走")) {
-        aiResponse = "出走申請フォームから希望レースを選択して送信してくださいね！";
+      } else if (userText.includes("引退")) {
+        aiResponse = "寂しくなりますね…長い間本当にお疲れ様でした。";
       }
       setMessages((prev) => [...prev, { sender: "ai", text: aiResponse }]);
     }, 1000);
@@ -202,6 +209,9 @@ export default function OwnerPage() {
     );
   }
 
+  const activeHorses = horses.filter((h) => h.status !== "引退");
+  const retiredHorses = horses.filter((h) => h.status === "引退");
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 max-w-6xl mx-auto space-y-6">
       <div className="flex justify-between items-center bg-slate-950 p-4 rounded-xl border border-slate-800">
@@ -223,20 +233,20 @@ export default function OwnerPage() {
             onChange={(e) => setSelectedHorseId(e.target.value)}
             className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
           >
-            {horses.map((h) => (
-              <option key={h.id} value={h.id}>{h.name}</option>
+            {activeHorses.map((h) => (
+              <option key={h.id} value={h.id}>{h.name} ({h.status})</option>
             ))}
           </select>
         </div>
         <div className="w-full md:w-1/3">
-          <label className="text-xs font-bold text-blue-300 block mb-1">出走希望レース（馬券レース自動連携）</label>
+          <label className="text-xs font-bold text-blue-300 block mb-1">出走希望レース</label>
           <select
             value={selectedRaceName}
             onChange={(e) => setSelectedRaceName(e.target.value)}
             className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
           >
             {availableRaces.length === 0 ? (
-              <option value="">（現在登録されているレースがありません）</option>
+              <option value="">（登録レースなし）</option>
             ) : (
               availableRaces.map((r) => (
                 <option key={r.id} value={r.name}>{r.name}</option>
@@ -253,26 +263,62 @@ export default function OwnerPage() {
         {/* 所有馬一覧 */}
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4">
           <h2 className="text-lg font-bold text-yellow-400">🐴 所有競走馬一覧</h2>
-          {horses.length === 0 ? (
-            <p className="text-slate-400 text-sm">現在、登録されている所有馬はありません。</p>
+          {activeHorses.length === 0 ? (
+            <p className="text-slate-400 text-sm">現在、現役の所有馬はありません。</p>
           ) : (
             <div className="space-y-3">
-              {horses.map((horse) => (
-                <div key={horse.id} className="bg-slate-900 p-4 rounded-lg border border-slate-700 space-y-2">
+              {activeHorses.map((horse) => (
+                <div key={horse.id} className="bg-slate-900 p-4 rounded-lg border border-slate-700 space-y-3">
                   <div className="flex justify-between items-start">
-                    <h3 className="text-lg font-bold text-white">{horse.name}</h3>
-                    <span className="bg-emerald-900/60 text-emerald-300 border border-emerald-700 text-xs px-2.5 py-0.5 rounded-full">
+                    <div>
+                      <h3 className="text-lg font-bold text-white">{horse.name}</h3>
+                      <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded mt-1 ${
+                        horse.status === "放牧" ? "bg-blue-950 text-blue-300 border border-blue-700" :
+                        horse.status === "引退申請中" ? "bg-rose-950 text-rose-300 border border-rose-700" :
+                        "bg-emerald-950 text-emerald-300 border border-emerald-700"
+                      }`}>
+                        ステータス: {horse.status}
+                      </span>
+                    </div>
+                    <span className="bg-slate-800 text-slate-300 text-xs px-2.5 py-1 rounded">
                       {horse.races_count || 0}戦{horse.wins_count || 0}勝
                     </span>
                   </div>
+
                   <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
                     <div>性齢: {horse.gender}{horse.age} ({horse.color})</div>
                     <div>主戦: {horse.jockey || "未定"}</div>
                     <div>血統: {horse.father} × {horse.mother}</div>
                     <div className="text-yellow-400 font-bold">獲得賞金: ¥{(horse.prize_money || 0).toLocaleString()}</div>
                   </div>
+
+                  {horse.status !== "引退申請中" && (
+                    <div className="pt-2 border-t border-slate-800 text-right">
+                      <button
+                        onClick={() => handleRequestRetirement(horse)}
+                        className="bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800 text-xs px-3 py-1 rounded"
+                      >
+                        🛑 自主引退を申請
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* 引退馬一覧 */}
+          {retiredHorses.length > 0 && (
+            <div className="pt-4 border-t border-slate-700 space-y-2">
+              <h3 className="text-xs font-bold text-slate-400">📜 引退馬（殿堂入り）</h3>
+              <div className="space-y-1">
+                {retiredHorses.map((h) => (
+                  <div key={h.id} className="bg-slate-950 p-2 rounded text-xs text-slate-400 flex justify-between">
+                    <span>{h.name} (引退)</span>
+                    <span>{h.races_count}戦{h.wins_count}勝 / ¥{(h.prize_money || 0).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

@@ -19,7 +19,7 @@ type Horse = {
   color: string;
   father: string;
   mother: string;
-  status: string;
+  status: string; // '現役', '放牧', '引退', '引退申請中'
   prize_money: number;
   races_count: number;
   wins_count: number;
@@ -45,7 +45,7 @@ export default function AdminOwnersPage() {
   const [horses, setHorses] = useState<Horse[]>([]);
   const [raceEntries, setRaceEntries] = useState<RaceEntry[]>([]);
 
-  // 馬の新規登録用フォーム
+  // 新規馬登録用
   const [newHorse, setNewHorse] = useState({
     name: "",
     gender: "牡",
@@ -59,7 +59,7 @@ export default function AdminOwnersPage() {
     jockey: "",
   });
 
-  // 成績・賞金編集用
+  // 戦績・賞金編集用
   const [editingHorseId, setEditingHorseId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ prize_money: 0, races_count: 0, wins_count: 0 });
 
@@ -123,27 +123,26 @@ export default function AdminOwnersPage() {
     }
   };
 
-  const handleDeleteOwner = async (ownerId: string) => {
-    if (!confirm("本当に削除/拒否しますか？")) return;
+  // 🏢 馬主（クラブ）の削除機能
+  const handleDeleteOwner = async (ownerId: string, ownerName: string) => {
+    if (!confirm(`本当にかの馬主・クラブ「${ownerName}」を削除しますか？所属馬も削除されます。`)) return;
     const { error } = await supabase.from("horse_masters").delete().eq("id", ownerId);
     if (!error) {
-      alert("削除しました");
+      alert("馬主・クラブを削除しました");
+      if (selectedOwnerId === ownerId) setSelectedOwnerId("");
       fetchOwners();
     }
   };
 
   // 🏁 出走申請の承認 ＆ 馬柱テーブル（race_horses）へ自動登録！
   const handleApproveRace = async (entry: RaceEntry, status: "approved" | "rejected") => {
-    // 1. 申請ステータスを更新
     const { error } = await supabase.from("race_entries").update({ status }).eq("id", entry.id);
-
     if (error) {
       alert("エラー: " + error.message);
       return;
     }
 
     if (status === "approved") {
-      // 2. 承認された場合、自動的にレース馬柱テーブル (race_horses) に登録！
       const { error: insertError } = await supabase.from("race_horses").insert([
         {
           race_name: entry.race_name,
@@ -151,10 +150,10 @@ export default function AdminOwnersPage() {
           horse_name: entry.horses?.name || "出走馬",
           owner_name: entry.horse_masters?.name || "馬主",
           jockey: entry.horses?.jockey || "未定",
-          frame_number: 1, // 初期枠番
-          horse_number: 1, // 初期馬番
-          popularity: 1,   // 初期人気
-          odds: 2.0,       // 初期オッズ
+          frame_number: 1,
+          horse_number: 1,
+          popularity: 1,
+          odds: 2.0,
         }
       ]);
 
@@ -170,6 +169,35 @@ export default function AdminOwnersPage() {
     fetchRaceEntries();
   };
 
+  // 🐴 馬のステータス変更（現役 / 放牧 / 引退）
+  const handleUpdateHorseStatus = async (horse: Horse, newStatus: string) => {
+    const { error } = await supabase.from("horses").update({ status: newStatus }).eq("id", horse.id);
+    if (error) {
+      alert("ステータス変更失敗: " + error.message);
+      return;
+    }
+
+    // 🔴 引退になった場合、自動的にレース出走表（race_horses）から馬の名前を完全削除！
+    if (newStatus === "引退") {
+      await supabase.from("race_horses").delete().eq("horse_id", horse.id);
+      alert(`「${horse.name}」を引退処理しました。レース馬柱から自動的に削除されました。`);
+    } else {
+      alert(`「${horse.name}」のステータスを【${newStatus}】に変更しました。`);
+    }
+
+    fetchHorses(selectedOwnerId);
+  };
+
+  // 🗑️ 引退馬の完全削除
+  const handleDeleteHorsePermanently = async (horseId: string, horseName: string) => {
+    if (!confirm(`引退馬「${horseName}」のデータを完全に削除しますか？`)) return;
+    const { error } = await supabase.from("horses").delete().eq("id", horseId);
+    if (!error) {
+      alert("完全削除しました");
+      fetchHorses(selectedOwnerId);
+    }
+  };
+
   const handleAddHorse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHorse.name || !selectedOwnerId) return;
@@ -178,6 +206,7 @@ export default function AdminOwnersPage() {
       {
         ...newHorse,
         owner_id: selectedOwnerId,
+        status: "現役",
       },
     ]);
 
@@ -262,9 +291,12 @@ export default function AdminOwnersPage() {
   const pendingOwners = owners.filter((o) => o.status === "pending");
   const approvedOwners = owners.filter((o) => o.status === "approved");
 
+  const activeHorses = horses.filter((h) => h.status !== "引退");
+  const retiredHorses = horses.filter((h) => h.status === "引退");
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col md:flex-row">
-      {/* 左サイドバー */}
+      {/* 左サイドバー：馬主・クラブ一覧 */}
       <div className="w-full md:w-80 bg-slate-950 p-4 border-r border-slate-800 space-y-6">
         {pendingOwners.length > 0 && (
           <div className="bg-amber-950/40 border border-amber-600/50 p-3 rounded-xl space-y-3">
@@ -278,7 +310,7 @@ export default function AdminOwnersPage() {
                   </div>
                   <div className="flex gap-1">
                     <button onClick={() => handleApproveOwner(owner.id)} className="bg-emerald-600 text-white font-bold px-2 py-1 rounded">承認</button>
-                    <button onClick={() => handleDeleteOwner(owner.id)} className="bg-rose-900 text-rose-200 px-2 py-1 rounded">拒否</button>
+                    <button onClick={() => handleDeleteOwner(owner.id, owner.name)} className="bg-rose-900 text-rose-200 px-2 py-1 rounded">拒否</button>
                   </div>
                 </div>
               ))}
@@ -297,7 +329,7 @@ export default function AdminOwnersPage() {
                   <div className="text-blue-300">出走希望: {entry.race_name}</div>
                   <div className="text-slate-400">馬主: {entry.horse_masters?.name}</div>
                   <div className="flex gap-1 pt-1">
-                    <button onClick={() => handleApproveRace(entry, "approved")} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-1 rounded">出走確定 ＆ 自動馬柱登録</button>
+                    <button onClick={() => handleApproveRace(entry, "approved")} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-1 rounded">出走確定</button>
                     <button onClick={() => handleApproveRace(entry, "rejected")} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded">却下</button>
                   </div>
                 </div>
@@ -306,20 +338,32 @@ export default function AdminOwnersPage() {
           </div>
         )}
 
+        {/* 承認済み馬主・クラブ一覧（削除ボタン付き） */}
         <div>
-          <h2 className="text-sm font-bold text-yellow-400 mb-3 px-1">🏇 馬主一覧（選択中）</h2>
-          <div className="space-y-1">
+          <h2 className="text-sm font-bold text-yellow-400 mb-3 px-1">🏇 馬主・クラブ一覧</h2>
+          <div className="space-y-1.5">
             {approvedOwners.map((owner) => (
-              <button
+              <div
                 key={owner.id}
-                onClick={() => setSelectedOwnerId(owner.id)}
-                className={`w-full text-left px-3 py-2 rounded-lg font-medium text-xs transition flex justify-between items-center ${
-                  selectedOwnerId === owner.id ? "bg-emerald-800 text-white shadow" : "hover:bg-slate-800 text-slate-300"
+                className={`p-2.5 rounded-lg text-xs transition flex justify-between items-center ${
+                  selectedOwnerId === owner.id ? "bg-emerald-800 text-white shadow" : "bg-slate-900 hover:bg-slate-800 text-slate-300"
                 }`}
               >
-                <span>{owner.name}</span>
-                <span className="text-slate-500">Pass: {owner.passcode}</span>
-              </button>
+                <button
+                  onClick={() => setSelectedOwnerId(owner.id)}
+                  className="flex-1 text-left font-bold"
+                >
+                  <div>{owner.name}</div>
+                  <div className="text-[10px] text-slate-400 font-normal">Pass: {owner.passcode}</div>
+                </button>
+                <button
+                  onClick={() => handleDeleteOwner(owner.id, owner.name)}
+                  className="bg-rose-950/80 hover:bg-rose-800 text-rose-300 border border-rose-700/50 text-[10px] px-2 py-1 rounded ml-2"
+                  title="クラブ削除"
+                >
+                  クラブ削除
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -353,27 +397,48 @@ export default function AdminOwnersPage() {
           </div>
         </form>
 
-        {/* 所属馬一覧 */}
+        {/* 所属馬一覧（現役・放牧・自主引退申請中） */}
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4">
-          <h3 className="text-md font-bold text-slate-200">📋 所属馬一覧</h3>
+          <h3 className="text-md font-bold text-slate-200">📋 所属競走馬一覧（現役・放牧）</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left text-slate-300">
               <thead className="bg-slate-950 text-slate-400 uppercase">
                 <tr>
                   <th className="px-3 py-2">馬名</th>
-                  <th className="px-2 py-2">性/年齢</th>
-                  <th className="px-3 py-2">血統</th>
+                  <th className="px-2 py-2">性齢</th>
+                  <th className="px-3 py-2">状態 (変更)</th>
                   <th className="px-3 py-2">通算成績</th>
                   <th className="px-3 py-2">獲得賞金</th>
                   <th className="px-3 py-2">操作</th>
                 </tr>
               </thead>
               <tbody>
-                {horses.map((horse) => (
+                {activeHorses.map((horse) => (
                   <tr key={horse.id} className="border-b border-slate-700">
-                    <td className="px-3 py-3 font-bold text-white">{horse.name}</td>
+                    <td className="px-3 py-3 font-bold text-white">
+                      {horse.name}
+                      {horse.status === "引退申請中" && (
+                        <span className="ml-2 bg-rose-900 text-rose-300 border border-rose-600 text-[10px] px-1.5 py-0.5 rounded font-bold animate-pulse">
+                          ⚠️ 馬主が引退申請中
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-3">{horse.gender}{horse.age}</td>
-                    <td className="px-3 py-3 text-slate-400">{horse.father} × {horse.mother}</td>
+                    <td className="px-3 py-3">
+                      <select
+                        value={horse.status}
+                        onChange={(e) => handleUpdateHorseStatus(horse, e.target.value)}
+                        className={`border rounded px-2 py-1 font-bold text-xs ${
+                          horse.status === "現役" ? "bg-emerald-950 border-emerald-600 text-emerald-300" :
+                          horse.status === "放牧" ? "bg-blue-950 border-blue-600 text-blue-300" :
+                          "bg-rose-950 border-rose-600 text-rose-300"
+                        }`}
+                      >
+                        <option value="現役">🟢 現役</option>
+                        <option value="放牧">🌿 放牧</option>
+                        <option value="引退">🛑 引退（出走表から削除）</option>
+                      </select>
+                    </td>
                     <td className="px-3 py-3 text-emerald-400 font-bold">
                       {horse.races_count || 0}戦{horse.wins_count || 0}勝
                     </td>
@@ -385,7 +450,7 @@ export default function AdminOwnersPage() {
                         onClick={() => startEditing(horse)}
                         className="bg-slate-700 hover:bg-slate-600 text-yellow-300 px-2.5 py-1 rounded font-bold"
                       >
-                        ✏️ 賞金/成績を変更
+                        ✏️ 賞金/成績
                       </button>
                     </td>
                   </tr>
@@ -393,6 +458,48 @@ export default function AdminOwnersPage() {
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* 📜 引退馬アーカイブ・リスト */}
+        <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-4">
+          <h3 className="text-md font-bold text-slate-400 flex items-center gap-2">
+            <span>📜 引退馬リスト（自動出走削除済みアーカイブ）</span>
+          </h3>
+          {retiredHorses.length === 0 ? (
+            <p className="text-xs text-slate-500">現在、引退馬の記録はありません。</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left text-slate-400">
+                <thead className="bg-slate-900 text-slate-500 uppercase">
+                  <tr>
+                    <th className="px-3 py-2">殿堂/引退馬名</th>
+                    <th className="px-2 py-2">性齢</th>
+                    <th className="px-3 py-2">生涯成績</th>
+                    <th className="px-3 py-2">総獲得賞金</th>
+                    <th className="px-3 py-2">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {retiredHorses.map((horse) => (
+                    <tr key={horse.id} className="border-b border-slate-800">
+                      <td className="px-3 py-2.5 font-bold text-slate-300">{horse.name} (引退)</td>
+                      <td className="px-2 py-2.5">{horse.gender}{horse.age}</td>
+                      <td className="px-3 py-2.5 text-slate-400">{horse.races_count || 0}戦{horse.wins_count || 0}勝</td>
+                      <td className="px-3 py-2.5 text-yellow-500">¥{(horse.prize_money || 0).toLocaleString()}</td>
+                      <td className="px-3 py-2.5">
+                        <button
+                          onClick={() => handleDeleteHorsePermanently(horse.id, horse.name)}
+                          className="bg-rose-950 hover:bg-rose-900 text-rose-300 px-2 py-1 rounded text-[10px]"
+                        >
+                          完全削除
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
 
