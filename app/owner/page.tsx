@@ -16,6 +16,8 @@ type Horse = {
   races_count: number;
   wins_count: number;
   jockey: string;
+  temporary_jockey?: string;
+  jockey_status?: string;
   ability_rank?: string;
   growth_type?: string;
   ai_comment?: string;
@@ -43,11 +45,17 @@ export default function OwnerPage() {
   const [ownerId, setOwnerId] = useState("");
   const [balance, setBalance] = useState<number>(0);
 
-  const [activeTab, setActiveTab] = useState<"horses" | "breed" | "race_apply" | "ai_chat">("horses");
+  const [activeTab, setActiveTab] = useState<"horses" | "jockey_select" | "breed" | "race_apply" | "ai_chat">("horses");
 
   const [horses, setHorses] = useState<Horse[]>([]);
   const [stallions, setStallions] = useState<Stallion[]>([]);
   const [availableRaces, setAvailableRaces] = useState<Race[]>([]);
+  const [availableJockeys, setAvailableJockeys] = useState<string[]>([]); // 自動取得騎手リスト
+
+  // 騎手変更申請フォーム
+  const [selectedJockeyHorseId, setSelectedJockeyHorseId] = useState("");
+  const [mainJockey, setMainJockey] = useState("");
+  const [tempJockey, setTempJockey] = useState("");
 
   // 生産用
   const [selectedStallionId, setSelectedStallionId] = useState("");
@@ -87,6 +95,7 @@ export default function OwnerPage() {
     fetchOwnerData(data.id);
     fetchStallions();
     fetchRaces();
+    fetchJockeysFromRaces();
 
     setMessages([
       { sender: "ai", text: `お疲れ様です、${data.name}オーナー！専属AI調教師です。` }
@@ -119,7 +128,6 @@ export default function OwnerPage() {
 
     const { data: h } = await supabase.from("horses").select("*").eq("owner_id", id);
     if (h) {
-      // 放牧自動カウントチェック
       const updated = h.map((horse) => {
         if (horse.status === "育成放牧中" && horse.released_at) {
           if (new Date(horse.released_at) <= new Date()) {
@@ -129,8 +137,25 @@ export default function OwnerPage() {
         return horse;
       });
       setHorses(updated);
-      if (updated.length > 0) setSelectedHorseId(updated[0].id);
+      if (updated.length > 0) {
+        setSelectedHorseId(updated[0].id);
+        setSelectedJockeyHorseId(updated[0].id);
+        setMainJockey(updated[0].jockey || "");
+        setTempJockey(updated[0].temporary_jockey || "");
+      }
     }
+  };
+
+  // 🏇 レース馬柱 (race_horses) や races テーブルから自動的に騎手名を読み込んで連動！
+  const fetchJockeysFromRaces = async () => {
+    const { data } = await supabase.from("race_horses").select("jockey");
+    let jList: string[] = ["武豊", "ルメール", "川田将雅", "横山武史", "坂井瑠星", "松山弘平"];
+    if (data && data.length > 0) {
+      const dbJockeys = data.map((d) => d.jockey).filter((j): j is string => Boolean(j));
+      jList = Array.from(new Set([...jList, ...dbJockeys])); // 重複排除
+    }
+    setAvailableJockeys(jList);
+    if (jList.length > 0 && !mainJockey) setMainJockey(jList[0]);
   };
 
   const fetchStallions = async () => {
@@ -149,14 +174,31 @@ export default function OwnerPage() {
     }
   };
 
-  // 🎲 生産ロジック（通常 ＆ 10万円ランダム生産）
+  // 騎手変更申請
+  const handleApplyJockey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedJockeyHorseId) return;
+
+    const { error } = await supabase.from("horses").update({
+      jockey: mainJockey,
+      temporary_jockey: tempJockey || null,
+      jockey_status: "pending", // 管理者承認待ちへ
+    }).eq("id", selectedJockeyHorseId);
+
+    if (!error) {
+      alert("騎手選択・変更申請を管理者に送信しました！承認をお待ちください。");
+      fetchOwnerData(ownerId);
+    }
+  };
+
+  // 生産ロジック
   const handleBreed = async (type: "normal" | "random") => {
     if (!foalName.trim()) {
       alert("馬名を入力してください。");
       return;
     }
 
-    let fee = 100000; // ランダム生産は10万円
+    let fee = 100000;
     let fatherName = "未知の種牡馬";
     let motherNameStr = "自家製繁殖牝馬";
 
@@ -177,7 +219,6 @@ export default function OwnerPage() {
       return;
     }
 
-    // DBから手動設定確率を取得
     const { data: setRes } = await supabase.from("system_settings").select("value_json").eq("key", "spawn_rates").single();
     const rates = setRes?.value_json || { SS: 5, S: 15, A: 30, B: 35, C: 15 };
 
@@ -189,20 +230,15 @@ export default function OwnerPage() {
     else if (rand < rates.SS + rates.S + rates.A + rates.B) rank = "B";
     else rank = "C";
 
-    // 成長型の決定（早熟 / 普通 / 晩成）
     const growthTypes = ["早熟", "普通", "晩成"];
     const growth = growthTypes[Math.floor(Math.random() * growthTypes.length)];
 
-    // 段階1：入厩前（育成中）コメント
     let commentStage1 = "「ただ者ではない雰囲気を感じます…2日後のトレセン入厩をお楽しみに！」";
     if (rank === "SS") commentStage1 = "「…とんでもない素質を秘めています！2日後の入厩が待ちきれません！」";
-    else if (rank === "S") commentStage1 = "「素晴らしいバネを感じます！かなりの素質を秘めていそうです。」";
 
-    // 2日後の日時設定
     const releaseTime = new Date();
     releaseTime.setDate(releaseTime.getDate() + 2);
 
-    // 引き落とし
     const newBal = balance - fee;
     await supabase.from("horse_masters").update({ balance: newBal }).eq("id", ownerId);
 
@@ -219,10 +255,12 @@ export default function OwnerPage() {
         color: randomColor,
         father: fatherName,
         mother: motherNameStr,
-        status: "育成放牧中", // 2日間自動放牧
+        status: "育成放牧中",
         prize_money: 0,
         races_count: 0,
         wins_count: 0,
+        jockey: "未定",
+        jockey_status: "approved",
         ability_rank: rank,
         growth_type: growth,
         ai_comment: commentStage1,
@@ -231,7 +269,7 @@ export default function OwnerPage() {
     ]);
 
     if (!error) {
-      alert(`🎉 仔馬「${foalName}」が誕生しました！\n\nAI素質示唆: 【${rank}ランク気配】\n現在2日間の育成放牧に入りました。`);
+      alert(`🎉 仔馬「${foalName}」が誕生しました！`);
       setFoalName("");
       setBalance(newBal);
       fetchOwnerData(ownerId);
@@ -275,8 +313,8 @@ export default function OwnerPage() {
 
     setTimeout(() => {
       let aiResponse = "了解いたしました！しっかり調整しておきます！";
-      if (userText.includes("素質") || userText.includes("タイプ")) {
-        aiResponse = "所有馬の成長タイプ（早熟・普通・晩成）と能力に応じた最適なローテーションを組みましょう！";
+      if (userText.includes("騎手") || userText.includes("乗り替わり")) {
+        aiResponse = "愛馬の脚質に合わせた騎手選定が勝利のカギになりますよ！選択画面から申請してくださいね。";
       }
       setMessages((prev) => [...prev, { sender: "ai", text: aiResponse }]);
     }, 1000);
@@ -317,8 +355,7 @@ export default function OwnerPage() {
   }
 
   const activeHorses = horses.filter((h) => h.status !== "引退");
-  const retiredHorses = horses.filter((h) => h.status === "引退");
-  const femaleHorses = horses.filter((h) => h.gender === "牝"); // 自家生産用牝馬
+  const femaleHorses = horses.filter((h) => h.gender === "牝");
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col md:flex-row">
@@ -337,6 +374,9 @@ export default function OwnerPage() {
           <nav className="space-y-1.5">
             <button onClick={() => setActiveTab("horses")} className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-bold ${activeTab === "horses" ? "bg-emerald-800 text-white" : "text-slate-400 hover:bg-slate-900"}`}>
               <span>🐴</span> 所有馬一覧 ({activeHorses.length})
+            </button>
+            <button onClick={() => setActiveTab("jockey_select")} className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-bold ${activeTab === "jockey_select" ? "bg-emerald-800 text-white" : "text-slate-400 hover:bg-slate-900"}`}>
+              <span>🏇</span> 主戦・点乗り騎手選択
             </button>
             <button onClick={() => setActiveTab("breed")} className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-bold ${activeTab === "breed" ? "bg-emerald-800 text-white" : "text-slate-400 hover:bg-slate-900"}`}>
               <span>🧬</span> 競走馬の生産 / 10万ガチャ
@@ -386,7 +426,12 @@ export default function OwnerPage() {
 
                   <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
                     <div>性齢: {horse.gender}{horse.age}歳 ({horse.color})</div>
-                    <div>成長型: <span className="text-emerald-400 font-bold">{horse.growth_type || "普通"}</span></div>
+                    <div>主戦騎手: <span className="text-yellow-400 font-bold">{horse.jockey || "未定"}</span></div>
+                    {horse.temporary_jockey && (
+                      <div className="col-span-2 text-blue-300 font-bold">
+                        次走テン乗り騎手: {horse.temporary_jockey} {horse.jockey_status === "pending" && "(管理者承認待ち)"}
+                      </div>
+                    )}
                     <div className="col-span-2 text-slate-400">血統: 父 {horse.father} × 母 {horse.mother}</div>
                     <div className="col-span-2 text-yellow-400 font-bold">獲得賞金: ¥{(horse.prize_money || 0).toLocaleString()}</div>
                   </div>
@@ -410,38 +455,85 @@ export default function OwnerPage() {
           </div>
         )}
 
-        {/* 生産 ＆ ランダムガチャタブ */}
-        {activeTab === "breed" && (
-          <div className="space-y-6 max-w-2xl">
+        {/* 🏇 騎手選択タブ */}
+        {activeTab === "jockey_select" && (
+          <div className="space-y-6 max-w-xl">
             <div>
-              <h2 className="text-xl font-bold text-emerald-400">🧬 競走馬の生産 ＆ ランダム10万ガチャ</h2>
-              <p className="text-xs text-slate-400 mt-1">生産後は自動的に2日間の「育成放牧」に入り、AIが段階的に能力と成長型を判定します！</p>
+              <h2 className="text-xl font-bold text-yellow-400">🏇 主戦騎手 ＆ テン乗り（点乗り）騎手選択</h2>
+              <p className="text-xs text-slate-400 mt-1">馬券・レース画面の自動連動騎手リストから選んで管理者に決定申請を送信します。</p>
             </div>
 
-            {/* 10万円ランダム生産 */}
+            <form onSubmit={handleApplyJockey} className="bg-slate-800 p-6 rounded-xl border border-slate-700 space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">対象の所有馬</label>
+                <select
+                  value={selectedJockeyHorseId}
+                  onChange={(e) => {
+                    setSelectedJockeyHorseId(e.target.value);
+                    const h = horses.find((x) => x.id === e.target.value);
+                    if (h) {
+                      setMainJockey(h.jockey || availableJockeys[0] || "");
+                      setTempJockey(h.temporary_jockey || "");
+                    }
+                  }}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+                >
+                  {activeHorses.map((h) => (
+                    <option key={h.id} value={h.id}>{h.name} (現在主戦: {h.jockey || "未定"})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">主戦騎手（基本騎乗者）</label>
+                <select
+                  value={mainJockey}
+                  onChange={(e) => setMainJockey(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-yellow-400 font-bold"
+                >
+                  {availableJockeys.map((j) => (
+                    <option key={j} value={j}>{j}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">次走テン乗り（乗り替わり）騎手（任意）</label>
+                <select
+                  value={tempJockey}
+                  onChange={(e) => setTempJockey(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-blue-300 font-bold"
+                >
+                  <option value="">指定なし（主戦騎手が継続騎乗）</option>
+                  {availableJockeys.map((j) => (
+                    <option key={j} value={j}>{j}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 font-bold text-white py-3 rounded-lg text-sm shadow">
+                管理者へ騎手指定申請を送信
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* 生産 ＆ ガチャ */}
+        {activeTab === "breed" && (
+          <div className="space-y-6 max-w-2xl">
+            <h2 className="text-xl font-bold text-emerald-400">🧬 競走馬の生産 ＆ ランダム10万ガチャ</h2>
+
             <div className="bg-gradient-to-r from-amber-950/60 to-slate-800 p-5 rounded-xl border border-amber-600/50 space-y-3">
               <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="text-md font-bold text-yellow-400">🎲 10万円 一発ランダム生産</h3>
-                  <p className="text-xs text-slate-300">低価格で一発大物の素質馬を狙えます！</p>
-                </div>
+                <h3 className="text-md font-bold text-yellow-400">🎲 10万円 一発ランダム生産</h3>
                 <span className="text-sm font-mono font-bold text-yellow-400">¥100,000</span>
               </div>
               <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="仔馬の名前を入力"
-                  value={foalName}
-                  onChange={(e) => setFoalName(e.target.value)}
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-                />
-                <button onClick={() => handleBreed("random")} className="bg-amber-600 hover:bg-amber-500 font-bold text-slate-950 px-5 py-2 rounded-lg text-sm shadow">
-                  10万円で生産
-                </button>
+                <input type="text" placeholder="仔馬の名前を入力" value={foalName} onChange={(e) => setFoalName(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+                <button onClick={() => handleBreed("random")} className="bg-amber-600 font-bold text-slate-950 px-5 py-2 rounded-lg text-sm">10万円で生産</button>
               </div>
             </div>
 
-            {/* 通常血統生産 */}
             <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4">
               <h3 className="text-md font-bold text-slate-200">🐴 種牡馬 ＆ 自家牝馬で本格生産</h3>
               <div>
@@ -454,23 +546,21 @@ export default function OwnerPage() {
               </div>
 
               <div>
-                <label className="text-xs text-slate-400 block mb-1">2. 繁殖牝馬選択（2歳〜繁殖入り牝馬対応）</label>
+                <label className="text-xs text-slate-400 block mb-1">2. 繁殖牝馬選択</label>
                 <select value={motherHorseId} onChange={(e) => setMotherHorseId(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
                   <option value="">自家製繁殖牝馬（初期）</option>
                   {femaleHorses.map((h) => (
-                    <option key={h.id} value={h.id}>{h.name} ({h.age}歳牝馬 / {h.status})</option>
+                    <option key={h.id} value={h.id}>{h.name} ({h.age}歳牝馬)</option>
                   ))}
                 </select>
               </div>
 
-              <button onClick={() => handleBreed("normal")} className="w-full bg-emerald-600 hover:bg-emerald-500 font-bold text-white py-3 rounded-lg text-sm">
-                🎉 種付けして仔馬を生産する
-              </button>
+              <button onClick={() => handleBreed("normal")} className="w-full bg-emerald-600 font-bold text-white py-3 rounded-lg text-sm">🎉 種付けして仔馬を生産する</button>
             </div>
           </div>
         )}
 
-        {/* 出走申請タブ */}
+        {/* 出走申請 */}
         {activeTab === "race_apply" && (
           <div className="space-y-6 max-w-xl">
             <h2 className="text-xl font-bold text-blue-400">🏁 レース出走申請</h2>
@@ -493,9 +583,7 @@ export default function OwnerPage() {
                 </select>
               </div>
 
-              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 font-bold text-white py-3 rounded-lg text-sm">
-                出走申請を送信
-              </button>
+              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 font-bold text-white py-3 rounded-lg text-sm">出走申請を送信</button>
             </form>
           </div>
         )}
