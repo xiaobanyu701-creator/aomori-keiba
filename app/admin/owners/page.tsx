@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+
 type HorseMaster = {
   id: string;
   name: string;
+  status: string; // 'pending' または 'approved'
+  passcode: string;
 };
 
 type Horse = {
@@ -22,11 +25,9 @@ type Horse = {
 };
 
 export default function AdminOwnersPage() {
-  // 管理者暗証番号認証のステート
   const [pin, setPin] = useState("");
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
-  // データ用ステート
   const [owners, setOwners] = useState<HorseMaster[]>([]);
   const [selectedOwnerId, setSelectedOwnerId] = useState<string>("");
   const [horses, setHorses] = useState<Horse[]>([]);
@@ -43,7 +44,6 @@ export default function AdminOwnersPage() {
     jockey: "",
   });
 
-  // 暗証番号チェック（「0302」で認証成功）
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (pin === "0302") {
@@ -54,7 +54,6 @@ export default function AdminOwnersPage() {
     }
   };
 
-  // 1. 認証後に馬主一覧を取得
   useEffect(() => {
     if (isAdminAuthenticated) {
       fetchOwners();
@@ -62,14 +61,16 @@ export default function AdminOwnersPage() {
   }, [isAdminAuthenticated]);
 
   const fetchOwners = async () => {
-    const { data } = await supabase.from("horse_masters").select("*").order("name");
-    if (data && data.length > 0) {
+    const { data } = await supabase.from("horse_masters").select("*").order("created_at", { ascending: false });
+    if (data) {
       setOwners(data);
-      setSelectedOwnerId(data[0].id);
+      const approved = data.filter((o) => o.status === "approved");
+      if (approved.length > 0 && !selectedOwnerId) {
+        setSelectedOwnerId(approved[0].id);
+      }
     }
   };
 
-  // 2. 選択された馬主の馬を取得
   useEffect(() => {
     if (selectedOwnerId && isAdminAuthenticated) {
       fetchHorses(selectedOwnerId);
@@ -85,7 +86,25 @@ export default function AdminOwnersPage() {
     if (data) setHorses(data);
   };
 
-  // 3. 競走馬の新規登録
+  // ✅ 馬主の承認処理
+  const handleApproveOwner = async (ownerId: string) => {
+    const { error } = await supabase.from("horse_masters").update({ status: "approved" }).eq("id", ownerId);
+    if (!error) {
+      alert("馬主を承認しました！");
+      fetchOwners();
+    }
+  };
+
+  // ❌ 馬主の申請拒否・削除処理
+  const handleDeleteOwner = async (ownerId: string) => {
+    if (!confirm("本当に削除/拒否しますか？")) return;
+    const { error } = await supabase.from("horse_masters").delete().eq("id", ownerId);
+    if (!error) {
+      alert("削除しました");
+      fetchOwners();
+    }
+  };
+
   const handleAddHorse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHorse.name || !selectedOwnerId) return;
@@ -115,13 +134,6 @@ export default function AdminOwnersPage() {
     }
   };
 
-  // 4. 馬の状態（現役/休養/引退）変更
-  const handleStatusChange = async (horseId: string, newStatus: string) => {
-    await supabase.from("horses").update({ status: newStatus }).eq("id", horseId);
-    fetchHorses(selectedOwnerId);
-  };
-
-  // 🔒 未認証時：暗証番号（0302）入力モーダル
   if (!isAdminAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-4">
@@ -152,43 +164,72 @@ export default function AdminOwnersPage() {
     );
   }
 
-  // 🔓 認証成功時：管理者ダッシュボード
+  const pendingOwners = owners.filter((o) => o.status === "pending");
+  const approvedOwners = owners.filter((o) => o.status === "approved");
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col md:flex-row">
-      {/* 左サイドバー：馬主一覧 */}
-      <div className="w-full md:w-72 bg-slate-950 p-4 border-r border-slate-800">
-        <h2 className="text-xl font-bold text-yellow-400 mb-4 px-2">🏇 馬主一覧</h2>
-        <div className="space-y-1">
-          {owners.map((owner) => (
-            <button
-              key={owner.id}
-              onClick={() => setSelectedOwnerId(owner.id)}
-              className={`w-full text-left px-4 py-3 rounded-lg font-medium transition ${
-                selectedOwnerId === owner.id
-                  ? "bg-emerald-800 text-white shadow"
-                  : "hover:bg-slate-800 text-slate-300"
-              }`}
-            >
-              {owner.name}
-            </button>
-          ))}
+      {/* 左サイドバー：馬主一覧＆承認エリア */}
+      <div className="w-full md:w-80 bg-slate-950 p-4 border-r border-slate-800 space-y-6">
+        {/* 🟡 承認待ち申請 */}
+        {pendingOwners.length > 0 && (
+          <div className="bg-amber-950/40 border border-amber-600/50 p-3 rounded-xl space-y-3">
+            <h3 className="text-sm font-bold text-amber-400 flex items-center gap-1">
+              <span>⏳ 承認待ちの新規登録 ({pendingOwners.length}件)</span>
+            </h3>
+            <div className="space-y-2">
+              {pendingOwners.map((owner) => (
+                <div key={owner.id} className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex justify-between items-center text-xs">
+                  <div>
+                    <div className="font-bold text-white">{owner.name}</div>
+                    <div className="text-slate-500">Pass: {owner.passcode}</div>
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={() => handleApproveOwner(owner.id)} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2.5 py-1 rounded">
+                      承認
+                    </button>
+                    <button onClick={() => handleDeleteOwner(owner.id)} className="bg-rose-900 hover:bg-rose-800 text-rose-200 px-2 py-1 rounded">
+                      拒否
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 🟢 承認済み馬主一覧 */}
+        <div>
+          <h2 className="text-lg font-bold text-yellow-400 mb-3 px-1">🏇 馬主一覧（承認済み）</h2>
+          <div className="space-y-1">
+            {approvedOwners.map((owner) => (
+              <button
+                key={owner.id}
+                onClick={() => setSelectedOwnerId(owner.id)}
+                className={`w-full text-left px-4 py-2.5 rounded-lg font-medium text-sm transition flex justify-between items-center ${
+                  selectedOwnerId === owner.id ? "bg-emerald-800 text-white shadow" : "hover:bg-slate-800 text-slate-300"
+                }`}
+              >
+                <span>{owner.name}</span>
+                <span className="text-xs text-slate-400">Pass: {owner.passcode}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* 右メインエリア */}
       <div className="flex-1 p-6 space-y-6">
         <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-          <h1 className="text-2xl font-bold text-emerald-400">
-            馬主管理・競走馬登録
-          </h1>
+          <h1 className="text-2xl font-bold text-emerald-400">馬主・競走馬管理ダッシュボード</h1>
           <span className="text-xs bg-emerald-900/50 text-emerald-300 border border-emerald-700 px-3 py-1 rounded-full">
-            認証済み (0302)
+            管理者認証中 (0302)
           </span>
         </div>
 
         {/* 馬追加フォーム */}
         <form onSubmit={handleAddHorse} className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3">
-          <h3 className="text-md font-bold text-slate-200">➕ 新規競走馬の登録</h3>
+          <h3 className="text-md font-bold text-slate-200">➕ 選択中馬主の競走馬を登録</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <input
               type="text"
@@ -242,18 +283,15 @@ export default function AdminOwnersPage() {
               onChange={(e) => setNewHorse({ ...newHorse, jockey: e.target.value })}
               className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white"
             />
-            <button
-              type="submit"
-              className="bg-emerald-600 font-bold hover:bg-emerald-500 text-white rounded px-4 py-2 text-sm transition"
-            >
+            <button type="submit" className="bg-emerald-600 font-bold hover:bg-emerald-500 text-white rounded px-4 py-2 text-sm transition">
               馬を登録する
             </button>
           </div>
         </form>
 
-        {/* 競走馬管理トラッカー（スプレッドシート風） */}
+        {/* 馬一覧 */}
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700">
-          <h3 className="text-md font-bold text-slate-200 mb-4">📋 競走馬一覧</h3>
+          <h3 className="text-md font-bold text-slate-200 mb-4">📋 所属馬一覧</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left text-slate-300">
               <thead className="text-xs bg-slate-950 text-slate-400 uppercase">
@@ -261,9 +299,8 @@ export default function AdminOwnersPage() {
                   <th className="px-3 py-2">馬名</th>
                   <th className="px-2 py-2">性/年齢</th>
                   <th className="px-3 py-2">血統 (父 / 母)</th>
-                  <th className="px-3 py-2">状況</th>
                   <th className="px-3 py-2">獲得賞金</th>
-                  <th className="px-3 py-3">主戦騎手</th>
+                  <th className="px-3 py-2">主戦騎手</th>
                 </tr>
               </thead>
               <tbody>
@@ -272,17 +309,6 @@ export default function AdminOwnersPage() {
                     <td className="px-3 py-3 font-bold text-white">{horse.name}</td>
                     <td className="px-2 py-3">{horse.gender}{horse.age}</td>
                     <td className="px-3 py-3 text-xs">{horse.father} × {horse.mother}</td>
-                    <td className="px-3 py-3">
-                      <select
-                        value={horse.status}
-                        onChange={(e) => handleStatusChange(horse.id, e.target.value)}
-                        className="bg-slate-900 text-white border border-slate-600 rounded px-2 py-1 text-xs"
-                      >
-                        <option value="現役">現役</option>
-                        <option value="休養">休養</option>
-                        <option value="引退">引退</option>
-                      </select>
-                    </td>
                     <td className="px-3 py-3 text-yellow-400">¥{horse.prize_money.toLocaleString()}</td>
                     <td className="px-3 py-3">{horse.jockey}</td>
                   </tr>
