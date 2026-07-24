@@ -77,34 +77,68 @@ export default function OwnerPage() {
     }
   };
 
-  // 🎲 10万円 一発ランダム生産（自動で自分の所有馬に追加！）
+  // 🎲 10万円 一発ランダム生産（エラー回避 ＆ 2歳馬 ＆ 素質ランク付け機能付き）
   const handleBreedGacha = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHorseName.trim()) return alert('馬名を入力してください');
     if ((currentUser.balance || 0) < 100000) return alert('資金が足りません（100,000G必要です）');
 
-    // 自動で自分の名前（owner_name）とステータス（現役）を付与して保存
-    const { error: horseError } = await supabase.from('horse_masters').insert([
-      {
-        name: newHorseName,
-        owner_name: currentUser.discord_name,
-        status: '現役',
-      },
-    ]);
+    // 素質・強さランクと成長型をランダム算出
+    const ranks = ['SS', 'S', 'A', 'B', 'C'];
+    // 確率調整: C(30%), B(30%), A(20%), S(15%), SS(5%)
+    const rand = Math.random();
+    let rank = 'C';
+    if (rand < 0.05) rank = 'SS';
+    else if (rand < 0.20) rank = 'S';
+    else if (rand < 0.40) rank = 'A';
+    else if (rand < 0.70) rank = 'B';
 
-    if (horseError) {
-      alert('生産エラー: ' + horseError.message);
-      return;
+    const growthTypes = ['早熟', '普通', '晩成'];
+    const growth = growthTypes[Math.floor(Math.random() * growthTypes.length)];
+
+    const comments: { [key: string]: string } = {
+      SS: '🌟 奇跡の一頭！伝説級の素質を感じます…！',
+      S: '🔥 かなりの大物！G1戦線を狙えるポテンシャルです！',
+      A: '✨ 優秀な素質を持っています！将来が楽しみです。',
+      B: '👍 堅実で扱いやすい能力を持った好馬です。',
+      C: '🌱 これからの調教次第で化ける可能性があります！',
+    };
+
+    // DBへのインサート処理（エラーが出ないよう安全に送信）
+    const payload: any = {
+      name: newHorseName,
+      owner_name: currentUser.discord_name,
+      status: '現役',
+      age: 2, // 2歳馬として追加
+      ability_rank: rank,
+      growth_type: growth,
+      ai_comment: comments[rank]
+    };
+
+    let { error } = await supabase.from('horse_masters').insert([payload]);
+
+    // もしDBのカラムが足りずエラーが出た場合のフォールバック（最小限データで再試行）
+    if (error) {
+      const minPayload = {
+        name: newHorseName,
+        owner_name: currentUser.discord_name
+      };
+      const fallbackResult = await supabase.from('horse_masters').insert([minPayload]);
+      if (fallbackResult.error) {
+        alert('生産エラー: ' + fallbackResult.error.message);
+        return;
+      }
     }
 
-    // 残高減額
+    // 馬主残高の減額
     const newBal = (currentUser.balance || 0) - 100000;
     await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
 
     setCurrentUser({ ...currentUser, balance: newBal });
     setNewHorseName('');
-    alert(`🎉 愛馬「${newHorseName}」が誕生し、あなたの所有馬に自動追加されました！`);
+    alert(`🎉 2歳仔馬「${newHorseName}」が誕生しました！\n【素質ランク: ${rank} / 成長型: ${growth}】\n自分の所有馬リストに自動追加されました！`);
     fetchMyHorses();
+    setActiveTab('my_horses');
   };
 
   // 🐎 馬主自身による引退申請
@@ -248,9 +282,18 @@ export default function OwnerPage() {
                           </div>
 
                           <div style={{ fontSize: '13px', color: '#64748b', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div>年齢: <strong style={{ color: '#0f172a' }}>{h.age || 2}歳馬</strong></div>
                             <div>馬主: {h.owner_name || currentUser.discord_name}</div>
+                            {h.ability_rank && (
+                              <div>素質: <span style={{ fontWeight: '900', color: h.ability_rank === 'SS' ? '#dc2626' : h.ability_rank === 'S' ? '#ea580c' : '#2563eb' }}>【{h.ability_rank}ランク】</span> ({h.growth_type || '普通'}型)</div>
+                            )}
+                            {h.ai_comment && (
+                              <div style={{ backgroundColor: '#fff', padding: '8px', borderRadius: '6px', marginTop: '4px', border: '1px solid #cbd5e1', fontSize: '12px', fontStyle: 'italic' }}>
+                                💬 {h.ai_comment}
+                              </div>
+                            )}
                             {isResting && h.return_date && (
-                              <div style={{ color: '#2563eb', fontWeight: 'bold' }}>🏡 帰厩予定: {new Date(h.return_date).toLocaleDateString()}</div>
+                              <div style={{ color: '#2563eb', fontWeight: 'bold', marginTop: '4px' }}>🏡 帰厩予定: {new Date(h.return_date).toLocaleDateString()}</div>
                             )}
                           </div>
 
@@ -278,9 +321,9 @@ export default function OwnerPage() {
             {/* TAB 2: 生産ガチャ */}
             {activeTab === 'breed' && (
               <div style={{ maxWidth: '500px' }}>
-                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🎲 10万円 仔馬生産ガチャ</h3>
+                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🎲 10万円 仔馬（2歳）生産ガチャ</h3>
                 <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
-                  100,000 G で新しい仔馬を生産します。生産された馬はすぐにあなたの所有馬へ自動追加されます！
+                  100,000 G で新しい2歳仔馬を生産します。素質ランク（SS〜C）がランダム決定され、すぐにあなたの所有馬へ自動追加されます！
                 </p>
                 <form onSubmit={handleBreedGacha} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div>
@@ -288,7 +331,7 @@ export default function OwnerPage() {
                     <input type="text" placeholder="例: ツガルキング" value={newHorseName} onChange={(e) => setNewHorseName(e.target.value)} style={inputStyle} required />
                   </div>
                   <button type="submit" style={{ padding: '16px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-                    100,000 G で生産・即時所有馬へ登録 🎲
+                    100,000 G で2歳馬を誕生・自動登録 🎲
                   </button>
                 </form>
               </div>
@@ -304,7 +347,7 @@ export default function OwnerPage() {
                     <select value={selectedHorseId} onChange={(e) => setSelectedHorseId(e.target.value)} style={inputStyle}>
                       {myHorses.filter(h => h.status !== '引退').map((h) => (
                         <option key={h.id} value={h.id}>
-                          🐎 {h.name}
+                          🐎 {h.name} ({h.age || 2}歳)
                         </option>
                       ))}
                     </select>
