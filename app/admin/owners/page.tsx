@@ -29,9 +29,10 @@ type Horse = {
 type RaceEntry = {
   id: string;
   horse_id: string;
+  owner_id: string;
   race_name: string;
   status: string;
-  horses?: { name: string };
+  horses?: { name: string; jockey: string };
   horse_masters?: { name: string };
 };
 
@@ -58,7 +59,7 @@ export default function AdminOwnersPage() {
     jockey: "",
   });
 
-  // 成績・賞金編集用のステート
+  // 成績・賞金編集用
   const [editingHorseId, setEditingHorseId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ prize_money: 0, races_count: 0, wins_count: 0 });
 
@@ -105,17 +106,15 @@ export default function AdminOwnersPage() {
     if (data) setHorses(data);
   };
 
-  // 出走申請の一覧を取得
   const fetchRaceEntries = async () => {
     const { data } = await supabase
       .from("race_entries")
-      .select("*, horses(name), horse_masters(name)")
+      .select("*, horses(name, jockey), horse_masters(name)")
       .eq("status", "pending")
       .order("created_at", { ascending: false });
     if (data) setRaceEntries(data as any);
   };
 
-  // 馬主の承認・拒否
   const handleApproveOwner = async (ownerId: string) => {
     const { error } = await supabase.from("horse_masters").update({ status: "approved" }).eq("id", ownerId);
     if (!error) {
@@ -133,16 +132,44 @@ export default function AdminOwnersPage() {
     }
   };
 
-  // 出走申請の承認・却下
-  const handleApproveRace = async (entryId: string, status: "approved" | "rejected") => {
-    const { error } = await supabase.from("race_entries").update({ status }).eq("id", entryId);
-    if (!error) {
-      alert(status === "approved" ? "出走を確定（承認）しました！" : "出走申請を却下しました");
-      fetchRaceEntries();
+  // 🏁 出走申請の承認 ＆ 馬柱テーブル（race_horses）へ自動登録！
+  const handleApproveRace = async (entry: RaceEntry, status: "approved" | "rejected") => {
+    // 1. 申請ステータスを更新
+    const { error } = await supabase.from("race_entries").update({ status }).eq("id", entry.id);
+
+    if (error) {
+      alert("エラー: " + error.message);
+      return;
     }
+
+    if (status === "approved") {
+      // 2. 承認された場合、自動的にレース馬柱テーブル (race_horses) に登録！
+      const { error: insertError } = await supabase.from("race_horses").insert([
+        {
+          race_name: entry.race_name,
+          horse_id: entry.horse_id,
+          horse_name: entry.horses?.name || "出走馬",
+          owner_name: entry.horse_masters?.name || "馬主",
+          jockey: entry.horses?.jockey || "未定",
+          frame_number: 1, // 初期枠番
+          horse_number: 1, // 初期馬番
+          popularity: 1,   // 初期人気
+          odds: 2.0,       // 初期オッズ
+        }
+      ]);
+
+      if (insertError) {
+        alert("出走承認されましたが馬柱への自動登録に失敗しました: " + insertError.message);
+      } else {
+        alert("出走を確定し、レース馬柱に自動登録しました！");
+      }
+    } else {
+      alert("出走申請を却下しました");
+    }
+
+    fetchRaceEntries();
   };
 
-  // 馬の新規登録
   const handleAddHorse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHorse.name || !selectedOwnerId) return;
@@ -174,7 +201,6 @@ export default function AdminOwnersPage() {
     }
   };
 
-  // 賞金・戦績の編集モーダル開始
   const startEditing = (horse: Horse) => {
     setEditingHorseId(horse.id);
     setEditForm({
@@ -184,7 +210,6 @@ export default function AdminOwnersPage() {
     });
   };
 
-  // 賞金・戦績の更新保存
   const handleUpdateHorseStats = async () => {
     if (!editingHorseId) return;
     const { error } = await supabase
@@ -241,7 +266,6 @@ export default function AdminOwnersPage() {
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col md:flex-row">
       {/* 左サイドバー */}
       <div className="w-full md:w-80 bg-slate-950 p-4 border-r border-slate-800 space-y-6">
-        {/* 承認待ち馬主 */}
         {pendingOwners.length > 0 && (
           <div className="bg-amber-950/40 border border-amber-600/50 p-3 rounded-xl space-y-3">
             <h3 className="text-xs font-bold text-amber-400">⏳ 承認待ちの馬主 ({pendingOwners.length}件)</h3>
@@ -273,8 +297,8 @@ export default function AdminOwnersPage() {
                   <div className="text-blue-300">出走希望: {entry.race_name}</div>
                   <div className="text-slate-400">馬主: {entry.horse_masters?.name}</div>
                   <div className="flex gap-1 pt-1">
-                    <button onClick={() => handleApproveRace(entry.id, "approved")} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-1 rounded">出走確定</button>
-                    <button onClick={() => handleApproveRace(entry.id, "rejected")} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded">却下</button>
+                    <button onClick={() => handleApproveRace(entry, "approved")} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-1 rounded">出走確定 ＆ 自動馬柱登録</button>
+                    <button onClick={() => handleApproveRace(entry, "rejected")} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded">却下</button>
                   </div>
                 </div>
               ))}
@@ -282,7 +306,6 @@ export default function AdminOwnersPage() {
           </div>
         )}
 
-        {/* 承認済み馬主一覧 */}
         <div>
           <h2 className="text-sm font-bold text-yellow-400 mb-3 px-1">🏇 馬主一覧（選択中）</h2>
           <div className="space-y-1">
@@ -332,7 +355,7 @@ export default function AdminOwnersPage() {
 
         {/* 所属馬一覧 */}
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4">
-          <h3 className="text-md font-bold text-slate-200">📋 所属馬一覧（賞金・成績の編集機能付き）</h3>
+          <h3 className="text-md font-bold text-slate-200">📋 所属馬一覧</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left text-slate-300">
               <thead className="bg-slate-950 text-slate-400 uppercase">
