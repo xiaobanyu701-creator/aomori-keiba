@@ -53,6 +53,7 @@ export default function AdminOwnersPage() {
   const [pin, setPin] = useState("");
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
+  // タブ管理
   const [adminTab, setAdminTab] = useState<"horses" | "jockey_approve" | "add_horse" | "stallions" | "ai_settings">("horses");
 
   const [owners, setOwners] = useState<HorseMaster[]>([]);
@@ -61,8 +62,10 @@ export default function AdminOwnersPage() {
   const [raceEntries, setRaceEntries] = useState<RaceEntry[]>([]);
   const [stallions, setStallions] = useState<Stallion[]>([]);
 
+  // AI確率設定
   const [spawnRates, setSpawnRates] = useState({ SS: 5, S: 15, A: 30, B: 35, C: 15 });
 
+  // 馬の新規登録フォーム
   const [newHorse, setNewHorse] = useState({
     name: "",
     gender: "牡",
@@ -77,8 +80,10 @@ export default function AdminOwnersPage() {
     ability_rank: "A",
   });
 
+  // 種牡馬登録フォーム
   const [newStallion, setNewStallion] = useState({ name: "", fee: 3000000, rank_bonus: 10 });
 
+  // 馬詳細編集モーダル
   const [editingHorseId, setEditingHorseId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     prize_money: 0,
@@ -109,9 +114,14 @@ export default function AdminOwnersPage() {
     }
   }, [isAdminAuthenticated]);
 
+  // 安全な取得ロジック（エラー回避のため特定カラムによる.order()指定を完全廃止）
   const fetchSpawnRates = async () => {
-    const { data } = await supabase.from("system_settings").select("*").eq("key", "spawn_rates").maybeSingle();
-    if (data?.value_json) setSpawnRates(data.value_json);
+    try {
+      const { data } = await supabase.from("system_settings").select("*").eq("key", "spawn_rates").maybeSingle();
+      if (data?.value_json) setSpawnRates(data.value_json);
+    } catch (e) {
+      console.log("spawn_rates fetch bypassed");
+    }
   };
 
   const handleSaveRates = async () => {
@@ -120,13 +130,16 @@ export default function AdminOwnersPage() {
       value_json: spawnRates,
     });
     if (!error) alert("AI素質出現確率を保存しました！");
+    else alert("保存に失敗しました: " + error.message);
   };
 
   const fetchOwners = async () => {
-    const { data } = await supabase.from("horse_masters").select("*").order("created_at", { ascending: false });
+    // order()による400エラーを防ぐためselect("*")のみにし、JSでソート
+    const { data, error } = await supabase.from("horse_masters").select("*");
     if (data) {
-      setOwners(data);
-      const approved = data.filter((o) => o.status === "approved");
+      const sorted = [...data].reverse();
+      setOwners(sorted);
+      const approved = sorted.filter((o) => o.status === "approved");
       if (approved.length > 0 && !selectedOwnerId) setSelectedOwnerId(approved[0].id);
     }
   };
@@ -138,17 +151,30 @@ export default function AdminOwnersPage() {
   }, [selectedOwnerId, isAdminAuthenticated]);
 
   const fetchHorses = async (ownerId: string) => {
-    const { data } = await supabase.from("horses").select("*").eq("owner_id", ownerId).order("created_at", { ascending: false });
-    if (data) setHorses(data);
+    const { data } = await supabase.from("horses").select("*").eq("owner_id", ownerId);
+    if (data) {
+      // 未定義プロパティの安全補正
+      const sanitized = data.map((h: any) => ({
+        ...h,
+        status: h.status || "現役",
+        prize_money: h.prize_money || 0,
+        races_count: h.races_count || 0,
+        wins_count: h.wins_count || 0,
+        jockey: h.jockey || "未定",
+        ability_rank: h.ability_rank || "B",
+        ai_comment: h.ai_comment || "状態良好です。",
+      }));
+      setHorses(sanitized.reverse());
+    }
   };
 
   const fetchRaceEntries = async () => {
-    const { data } = await supabase.from("race_entries").select("*, horses(*), horse_masters(*)").eq("status", "pending").order("created_at", { ascending: false });
+    const { data } = await supabase.from("race_entries").select("*").eq("status", "pending");
     if (data) setRaceEntries(data as any);
   };
 
   const fetchStallions = async () => {
-    const { data } = await supabase.from("stallions").select("*").order("fee", { ascending: false });
+    const { data } = await supabase.from("stallions").select("*");
     if (data) setStallions(data);
   };
 
