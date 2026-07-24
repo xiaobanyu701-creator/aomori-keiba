@@ -53,7 +53,7 @@ export default function AdminOwnersPage() {
   const [pin, setPin] = useState("");
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
-  const [adminTab, setAdminTab] = useState<"horses" | "jockey_approve" | "add_horse" | "stallions" | "ai_settings" | "retired">("horses");
+  const [adminTab, setAdminTab] = useState<"horses" | "jockey_approve" | "add_horse" | "stallions" | "ai_settings">("horses");
 
   const [owners, setOwners] = useState<HorseMaster[]>([]);
   const [selectedOwnerId, setSelectedOwnerId] = useState<string>("");
@@ -267,12 +267,6 @@ export default function AdminOwnersPage() {
     }
   };
 
-  const handleDeleteStallion = async (id: string, name: string) => {
-    if (!confirm(`種牡馬「${name}」を削除しますか？`)) return;
-    const { error } = await supabase.from("stallions").delete().eq("id", id);
-    if (!error) fetchStallions();
-  };
-
   const handleAddHorseDirect = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHorse.name || !selectedOwnerId) return;
@@ -363,7 +357,6 @@ export default function AdminOwnersPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row">
-      {/* 左サイドバー */}
       <div className="w-full md:w-80 bg-slate-900/90 p-4 border-r border-slate-800 space-y-6 shrink-0">
         <div className="flex justify-between items-center pb-2 border-b border-slate-800">
           <h2 className="text-sm font-bold text-yellow-400">🏇 登録馬主・クラブ</h2>
@@ -390,7 +383,6 @@ export default function AdminOwnersPage() {
           </div>
         )}
 
-        {/* 出走申請 */}
         {raceEntries.length > 0 && (
           <div className="bg-blue-950/50 border border-blue-600/60 p-3 rounded-xl space-y-2">
             <h3 className="text-xs font-bold text-blue-400">🏁 レース出走申請 ({raceEntries.length}件)</h3>
@@ -425,7 +417,6 @@ export default function AdminOwnersPage() {
         </div>
       </div>
 
-      {/* 右メイン */}
       <div className="flex-1 p-6 space-y-6 overflow-y-auto">
         <div className="flex justify-between items-center border-b border-slate-800 pb-4">
           <div>
@@ -435,7 +426,6 @@ export default function AdminOwnersPage() {
           <span className="text-xs bg-emerald-900/50 text-emerald-300 border border-emerald-700 px-3 py-1 rounded-full font-mono">管理者 (0302)</span>
         </div>
 
-        {/* タブ切り替え */}
         <div className="flex gap-2 border-b border-slate-800 pb-3 overflow-x-auto text-xs font-bold">
           <button onClick={() => setAdminTab("horses")} className={`px-4 py-2 rounded-lg ${adminTab === "horses" ? "bg-emerald-600 text-white" : "bg-slate-900 text-slate-400"}`}>
             📋 競走馬データ詳細 ({activeHorses.length})
@@ -455,7 +445,6 @@ export default function AdminOwnersPage() {
           </button>
         </div>
 
-        {/* 競走馬データ詳細 */}
         {adminTab === "horses" && (
           <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-4">
             <h3 className="text-md font-bold text-slate-200">📋 所有馬一覧</h3>
@@ -495,7 +484,6 @@ export default function AdminOwnersPage() {
           </div>
         )}
 
-        {/* 🏇 騎手承認タブ */}
         {adminTab === "jockey_approve" && (
           <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4">
             <h3 className="text-md font-bold text-yellow-400">🏇 馬主からの騎手変更・決定申請一覧</h3>
@@ -511,12 +499,8 @@ export default function AdminOwnersPage() {
                       {h.temporary_jockey && <div className="text-blue-300">申請テン乗り騎手: {h.temporary_jockey}</div>}
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => handleApproveJockey(h, true)} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded shadow">
-                        承認・確定
-                      </button>
-                      <button onClick={() => handleApproveJockey(h, false)} className="bg-rose-950 hover:bg-rose-900 text-rose-300 px-3 py-2 rounded">
-                        却下
-                      </button>
+                      <button onClick={() => handleApproveJockey(h, true)} className="bg-emerald-600 text-white font-bold px-4 py-2 rounded shadow">承認・確定</button>
+                      <button onClick={() => handleApproveJockey(h, false)} className="bg-rose-950 text-rose-300 px-3 py-2 rounded">却下</button>
                     </div>
                   </div>
                 ))}
@@ -525,7 +509,6 @@ export default function AdminOwnersPage() {
           </div>
         )}
 
-        {/* 競走馬直接登録 */}
         {adminTab === "add_horse" && (
           <form onSubmit={handleAddHorseDirect} className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4 max-w-2xl">
             <h3 className="text-md font-bold text-yellow-400">➕ 競走馬を直接登録</h3>
@@ -538,7 +521,6 @@ export default function AdminOwnersPage() {
           </form>
         )}
 
-        {/* 種牡馬マスター */}
         {adminTab === "stallions" && (
           <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4 max-w-2xl">
             <h3 className="text-md font-bold text-emerald-400">🧬 種牡馬マスター管理</h3>
@@ -550,7 +532,6 @@ export default function AdminOwnersPage() {
           </div>
         )}
 
-        {/* AI確率 */}
         {adminTab === "ai_settings" && (
           <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4 max-w-xl">
             <h3 className="text-md font-bold text-amber-400">⚙️ AI素質確率手動設定</h3>
@@ -567,7 +548,6 @@ export default function AdminOwnersPage() {
         )}
       </div>
 
-      {/* モーダル */}
       {editingHorseId && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-700 p-6 rounded-xl max-w-md w-full space-y-4">
