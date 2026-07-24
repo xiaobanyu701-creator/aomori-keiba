@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 
 export default function OwnerPage() {
@@ -14,10 +14,8 @@ export default function OwnerPage() {
   const [myHorses, setMyHorses] = useState<any[]>([]);
   const [jockeyList, setJockeyList] = useState<any[]>([]);
 
-  // 10万ガチャ・生産用
+  // ガチャ・申請用
   const [newHorseName, setNewHorseName] = useState('');
-
-  // 騎手変更用
   const [selectedHorseId, setSelectedHorseId] = useState('');
   const [selectedJockey, setSelectedJockey] = useState('');
 
@@ -39,14 +37,15 @@ export default function OwnerPage() {
     }
   };
 
+  // 自分の所有馬（owner_nameが一致）を取得
   const fetchMyHorses = async () => {
-    // 全競走馬マスターから自分が馬主になっている馬を取得
+    if (!currentUser) return;
     const { data } = await supabase.from('horse_masters').select('*');
     if (data) {
-      // ユーザー名と一致する馬を取得、または所有馬テーブルから取得
-      setMyHorses([...data].reverse());
-      if (data.length > 0 && !selectedHorseId) {
-        setSelectedHorseId(data[0].id);
+      const filtered = data.filter((h) => h.owner_name === currentUser.discord_name);
+      setMyHorses([...filtered].reverse());
+      if (filtered.length > 0 && !selectedHorseId) {
+        setSelectedHorseId(filtered[0].id);
       }
     }
   };
@@ -78,32 +77,49 @@ export default function OwnerPage() {
     }
   };
 
-  // 🎲 10万円 一発ランダム生産（競走馬マスターに一元保存）
+  // 🎲 10万円 一発ランダム生産（自動で自分の所有馬に追加！）
   const handleBreedGacha = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHorseName.trim()) return alert('馬名を入力してください');
     if ((currentUser.balance || 0) < 100000) return alert('資金が足りません（100,000G必要です）');
 
-    // 1. 競走馬マスターに登録（これで管理画面・馬券画面へ一元連動）
+    // 自動で自分の名前（owner_name）とステータス（現役）を付与して保存
     const { error: horseError } = await supabase.from('horse_masters').insert([
       {
         name: newHorseName,
+        owner_name: currentUser.discord_name,
+        status: '現役',
       },
     ]);
 
     if (horseError) {
-      alert('登録エラー: ' + horseError.message);
+      alert('生産エラー: ' + horseError.message);
       return;
     }
 
-    // 2. 馬主残高の減額
+    // 残高減額
     const newBal = (currentUser.balance || 0) - 100000;
     await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
 
     setCurrentUser({ ...currentUser, balance: newBal });
     setNewHorseName('');
-    alert(`🎉 仔馬「${newHorseName}」が誕生しました！管理画面のマスターへ即時連携されました！`);
+    alert(`🎉 愛馬「${newHorseName}」が誕生し、あなたの所有馬に自動追加されました！`);
     fetchMyHorses();
+  };
+
+  // 🐎 馬主自身による引退申請
+  const handleRetireRequest = async (horseId: string, horseName: string) => {
+    if (!confirm(`「${horseName}」の引退を管理者に申請しますか？`)) return;
+
+    const { error } = await supabase
+      .from('horse_masters')
+      .update({ status: '引退申請中' })
+      .eq('id', horseId);
+
+    if (!error) {
+      alert(`📨 「${horseName}」の引退申請を行いました。管理者の承認をお待ちください。`);
+      fetchMyHorses();
+    }
   };
 
   // 🏇 騎手変更申請
@@ -111,16 +127,23 @@ export default function OwnerPage() {
     e.preventDefault();
     if (!selectedHorseId) return alert('馬を選択してください');
 
-    // 競走馬マスター（または出走馬）の騎手を更新
     const targetHorse = myHorses.find((h) => h.id === selectedHorseId);
     if (!targetHorse) return;
 
-    alert(`🏇 「${targetHorse.name}」の主戦騎手を【${selectedJockey}】に変更申請しました！`);
+    await supabase.from('inquiries').insert([
+      {
+        user_id: currentUser.id,
+        discord_name: currentUser.discord_name,
+        title: `【騎手変更申請】 ${targetHorse.name}`,
+        content: `対象馬: ${targetHorse.name}\n希望騎手: ${selectedJockey}`,
+      },
+    ]);
+
+    alert(`🏇 「${targetHorse.name}」の主戦騎手を【${selectedJockey}】へ変更する申請を送信しました！`);
   };
 
   return (
     <div style={{ backgroundColor: '#f1f5f9', minHeight: '100vh', fontFamily: 'sans-serif', color: '#0f172a' }}>
-      {/* ヘッダー */}
       <header
         style={{
           backgroundColor: '#16a34a',
@@ -183,37 +206,81 @@ export default function OwnerPage() {
           </div>
         ) : (
           <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
-            {/* タブ */}
             <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px' }}>
-              <TabBtn active={activeTab === 'my_horses'} onClick={() => setActiveTab('my_horses')} text="📋 所有馬マスター一覧" />
-              <TabBtn active={activeTab === 'breed'} onClick={() => setActiveTab('breed')} text="🎲 10万円 一発仔馬生産" />
+              <TabBtn active={activeTab === 'my_horses'} onClick={() => setActiveTab('my_horses')} text="📋 自分の所有馬一覧" />
+              <TabBtn active={activeTab === 'breed'} onClick={() => setActiveTab('breed')} text="🎲 10万円 仔馬生産" />
               <TabBtn active={activeTab === 'jockey'} onClick={() => setActiveTab('jockey')} text="🏇 騎手変更申請" />
             </div>
 
-            {/* TAB 1: 所有馬一覧 */}
+            {/* TAB 1: 自分の所有馬一覧 */}
             {activeTab === 'my_horses' && (
               <div>
-                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🐎 登録済み競走馬一覧 ({myHorses.length}頭)</h3>
-                <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
-                  ※ここに表示されている馬は、管理者画面の「競走馬マスター」およびレースの「出走馬選択」へ自動で一元連携されています。
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
-                  {myHorses.map((h) => (
-                    <div key={h.id} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#16a34a' }}>🐎 {h.name}</div>
-                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>ステータス: 現役 / マスター連動中</div>
-                    </div>
-                  ))}
-                </div>
+                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🐎 自分の所有馬一覧 ({myHorses.length}頭)</h3>
+                {myHorses.length === 0 ? (
+                  <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                    まだ所有馬がいません。「10万円 仔馬生産」から生産してください。
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                    {myHorses.map((h) => {
+                      const isRetired = h.status === '引退';
+                      const isPendingRetire = h.status === '引退申請中';
+                      const isResting = h.status === '放牧中';
+
+                      return (
+                        <div key={h.id} style={{ backgroundColor: isRetired ? '#f1f5f9' : '#f8fafc', padding: '16px', borderRadius: '12px', border: `1px solid ${isRetired ? '#cbd5e1' : '#e2e8f0'}` }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <span style={{ fontWeight: 'bold', fontSize: '18px', color: isRetired ? '#64748b' : '#16a34a' }}>
+                              🐎 {h.name}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 'bold',
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                color: '#fff',
+                                backgroundColor: isRetired ? '#64748b' : isPendingRetire ? '#eab308' : isResting ? '#3b82f6' : '#16a34a',
+                              }}
+                            >
+                              {h.status || '現役'}
+                            </span>
+                          </div>
+
+                          <div style={{ fontSize: '13px', color: '#64748b', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div>馬主: {h.owner_name || currentUser.discord_name}</div>
+                            {isResting && h.return_date && (
+                              <div style={{ color: '#2563eb', fontWeight: 'bold' }}>🏡 帰厩予定: {new Date(h.return_date).toLocaleDateString()}</div>
+                            )}
+                          </div>
+
+                          {!isRetired && !isPendingRetire && (
+                            <button
+                              onClick={() => handleRetireRequest(h.id, h.name)}
+                              style={{ marginTop: '12px', width: '100%', backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                            >
+                              引退を申請する 🛑
+                            </button>
+                          )}
+                          {isPendingRetire && (
+                            <div style={{ marginTop: '10px', fontSize: '12px', color: '#ca8a04', textAlign: 'center', fontWeight: 'bold' }}>
+                              ⏳ 管理者の引退承認待ちです
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* TAB 2: 仔馬生産 */}
+            {/* TAB 2: 生産ガチャ */}
             {activeTab === 'breed' && (
               <div style={{ maxWidth: '500px' }}>
-                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🎲 10万円 一発ランダム仔馬生産</h3>
+                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🎲 10万円 仔馬生産ガチャ</h3>
                 <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
-                  100,000 G で新しい競走馬を生産します。生産された馬はすぐにデータベースに一元保存され、出走登録が可能になります！
+                  100,000 G で新しい仔馬を生産します。生産された馬はすぐにあなたの所有馬へ自動追加されます！
                 </p>
                 <form onSubmit={handleBreedGacha} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div>
@@ -221,7 +288,7 @@ export default function OwnerPage() {
                     <input type="text" placeholder="例: ツガルキング" value={newHorseName} onChange={(e) => setNewHorseName(e.target.value)} style={inputStyle} required />
                   </div>
                   <button type="submit" style={{ padding: '16px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-                    100,000 G で仔馬を誕生させる 🎲
+                    100,000 G で生産・即時所有馬へ登録 🎲
                   </button>
                 </form>
               </div>
@@ -235,7 +302,7 @@ export default function OwnerPage() {
                   <div>
                     <label style={labelStyle}>愛馬を選択</label>
                     <select value={selectedHorseId} onChange={(e) => setSelectedHorseId(e.target.value)} style={inputStyle}>
-                      {myHorses.map((h) => (
+                      {myHorses.filter(h => h.status !== '引退').map((h) => (
                         <option key={h.id} value={h.id}>
                           🐎 {h.name}
                         </option>
@@ -253,7 +320,7 @@ export default function OwnerPage() {
                     </select>
                   </div>
                   <button type="submit" style={{ padding: '16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-                    騎手変更を申請する 📝
+                    騎手変更申請を運営へ送信 📨
                   </button>
                 </form>
               </div>
