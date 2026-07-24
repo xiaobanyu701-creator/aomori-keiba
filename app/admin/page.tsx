@@ -58,7 +58,7 @@ export default function SuperAdminConsole() {
       const race = races.find(r => r.race_number === selectedRaceNo);
       if (race) {
         setCurrentRace(race);
-        setEditTitle(race.title);
+        setEditTitle(race.title || '');
         setEditDistance(race.distance_m || 1800);
         setEditCondition(race.track_condition || '良');
         setEditWeather(race.weather || '晴');
@@ -72,33 +72,143 @@ export default function SuperAdminConsole() {
       const target = users.find(u => u.id === selectedUserId);
       if (target) {
         setSelectedUser(target);
-        setCustomBalanceInput(target.balance.toString());
-        setCustomPinInput(target.pin_code);
+        setCustomBalanceInput((target.balance || 0).toString());
+        setCustomPinInput(target.pin_code || '');
       }
     } else { setSelectedUser(null); }
   }, [selectedUserId, users]);
 
-  const fetchRaces = async () => { const { data } = await supabase.from('races').select('*').order('race_number'); if (data) setRaces(data); };
-  const fetchHorses = async (raceId: string) => { const { data } = await supabase.from('horses').select('*').eq('race_id', raceId).order('horse_number'); if (data) { setHorses(data); setNewHorseNumber(data.length + 1); } };
-  const fetchUsers = async () => { const { data } = await supabase.from('users').select('*').order('created_at', { ascending: false }); if (data) { setUsers(data); if (data.length > 0 && !selectedUserId) setSelectedUserId(data[0].id); } };
+  // ★ 400エラー回避のため order() を使わず select("*") のみ指定
+  const fetchRaces = async () => {
+    const { data } = await supabase.from('races').select('*');
+    if (data) {
+      const sorted = [...data].sort((a, b) => (a.race_number || 0) - (b.race_number || 0));
+      setRaces(sorted);
+    }
+  };
+
+  const fetchHorses = async (raceId: string) => {
+    const { data } = await supabase.from('horses').select('*').eq('race_id', raceId);
+    if (data) {
+      const sorted = [...data].sort((a, b) => (a.horse_number || 0) - (b.horse_number || 0));
+      setHorses(sorted);
+      setNewHorseNumber(sorted.length + 1);
+    }
+  };
+
+  const fetchUsers = async () => {
+    const { data } = await supabase.from('users').select('*');
+    if (data) {
+      const reversed = [...data].reverse();
+      setUsers(reversed);
+      if (reversed.length > 0 && !selectedUserId) setSelectedUserId(reversed[0].id);
+    }
+  };
   
-  const fetchJockeys = async () => { const { data } = await supabase.from('jockeys').select('*').order('created_at'); if (data) { setJockeyList(data); if (data.length > 0 && !newJockey) setNewJockey(data[0].name); } };
-  const fetchHorseMasters = async () => { const { data } = await supabase.from('horse_masters').select('*').order('created_at'); if (data) { setHorseMasterList(data); if (data.length > 0 && !newHorseName) setNewHorseName(data[0].name); } };
-  const fetchInquiries = async () => { const { data } = await supabase.from('inquiries').select('*').order('created_at', { ascending: false }); if (data) setInquiries(data); };
+  const fetchJockeys = async () => {
+    const { data } = await supabase.from('jockeys').select('*');
+    if (data) {
+      setJockeyList(data);
+      if (data.length > 0 && !newJockey) setNewJockey(data[0].name);
+    }
+  };
 
-  const handleAddJockey = async (e: React.FormEvent) => { e.preventDefault(); if (!addJockeyName) return alert('入力してください'); const { error } = await supabase.from('jockeys').insert([{ name: addJockeyName }]); if (error) alert('既に登録されています'); else { setAddJockeyName(''); fetchJockeys(); alert('登録しました！'); } };
-  const handleDeleteJockey = async (id: string, name: string) => { if (!confirm(`「${name}」を削除しますか？`)) return; await supabase.from('jockeys').delete().eq('id', id); fetchJockeys(); };
+  const fetchHorseMasters = async () => {
+    const { data } = await supabase.from('horse_masters').select('*');
+    if (data) {
+      setHorseMasterList(data);
+      if (data.length > 0 && !newHorseName) setNewHorseName(data[0].name);
+    }
+  };
 
-  const handleAddHorseMaster = async (e: React.FormEvent) => { e.preventDefault(); if (!addHorseMasterName) return alert('入力してください'); const { error } = await supabase.from('horse_masters').insert([{ name: addHorseMasterName }]); if (error) alert('既に登録されています'); else { setAddHorseMasterName(''); fetchHorseMasters(); alert('登録しました！'); } };
-  const handleDeleteHorseMaster = async (id: string, name: string) => { if (!confirm(`「${name}」を削除しますか？`)) return; await supabase.from('horse_masters').delete().eq('id', id); fetchHorseMasters(); };
+  const fetchInquiries = async () => {
+    const { data } = await supabase.from('inquiries').select('*');
+    if (data) setInquiries([...data].reverse());
+  };
 
-  const handleUpdateRaceInfo = async (e: React.FormEvent) => { e.preventDefault(); if (!currentRace) return; await supabase.from('races').update({ title: editTitle, distance_m: editDistance, track_condition: editCondition, weather: editWeather, status: 'open' }).eq('id', currentRace.id); alert('保存しました！'); fetchRaces(); };
+  const handleAddJockey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addJockeyName) return alert('入力してください');
+    const { error } = await supabase.from('jockeys').insert([{ name: addJockeyName }]);
+    if (error) alert('既に登録されているかエラーが発生しました');
+    else { setAddJockeyName(''); fetchJockeys(); alert('登録しました！'); }
+  };
 
-  const handleAddHorse = async (e: React.FormEvent) => { e.preventDefault(); if (!currentRace || !newHorseName) return alert('馬名を選択してください'); await supabase.from('horses').insert([{ race_id: currentRace.id, horse_number: newHorseNumber, name: newHorseName, age: newHorseAge, jockey: newJockey, weight: newWeight, popularity: newPopularity, mark: newMark, condition_mark: newConditionMark }]); fetchHorses(currentRace.id); alert('出走馬を追加しました！'); };
-  const handleUpdateHorseDetail = async (horseId: string, field: string, value: any) => { await supabase.from('horses').update({ [field]: value }).eq('id', horseId); fetchHorses(currentRace.id); };
-  const handleDeleteHorse = async (horseId: string, name: string) => { if (!confirm('削除しますか？')) return; await supabase.from('horses').delete().eq('id', horseId); fetchHorses(currentRace.id); };
+  const handleDeleteJockey = async (id: string, name: string) => {
+    if (!confirm(`「${name}」を削除しますか？`)) return;
+    await supabase.from('jockeys').delete().eq('id', id);
+    fetchJockeys();
+  };
 
-  const handleGenerateAIOdds = async () => { if (!confirm('自動設定しますか？')) return; const oddsTable: { [key: number]: number } = { 1: 1.8, 2: 3.2, 3: 5.5, 4: 8.8, 5: 14.2, 6: 22.5, 7: 35.0, 8: 58.0, 9: 84.0, 10: 120.0 }; for (const h of horses) { const pop = h.popularity || 1; const baseOdds = oddsTable[pop] ? oddsTable[pop] : (pop * 15.0); const finalOdds = Math.max(1.1, Number((baseOdds + (Math.random() * 0.4) - 0.2).toFixed(1))); await supabase.from('horses').update({ manual_odds: finalOdds }).eq('id', h.id); } alert('🤖 適用完了！'); fetchHorses(currentRace.id); };
+  const handleAddHorseMaster = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addHorseMasterName) return alert('入力してください');
+    const { error } = await supabase.from('horse_masters').insert([{ name: addHorseMasterName }]);
+    if (error) alert('既に登録されているかエラーが発生しました');
+    else { setAddHorseMasterName(''); fetchHorseMasters(); alert('登録しました！'); }
+  };
+
+  const handleDeleteHorseMaster = async (id: string, name: string) => {
+    if (!confirm(`「${name}」を削除しますか？`)) return;
+    await supabase.from('horse_masters').delete().eq('id', id);
+    fetchHorseMasters();
+  };
+
+  const handleUpdateRaceInfo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentRace) return;
+    await supabase.from('races').update({
+      title: editTitle,
+      distance_m: editDistance,
+      track_condition: editCondition,
+      weather: editWeather,
+      status: 'open'
+    }).eq('id', currentRace.id);
+    alert('保存しました！');
+    fetchRaces();
+  };
+
+  const handleAddHorse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentRace || !newHorseName) return alert('馬名を選択してください');
+    await supabase.from('horses').insert([{
+      race_id: currentRace.id,
+      horse_number: newHorseNumber,
+      name: newHorseName,
+      age: newHorseAge,
+      jockey: newJockey,
+      weight: newWeight,
+      popularity: newPopularity,
+      mark: newMark,
+      condition_mark: newConditionMark
+    }]);
+    fetchHorses(currentRace.id);
+    alert('出走馬を追加しました！');
+  };
+
+  const handleUpdateHorseDetail = async (horseId: string, field: string, value: any) => {
+    await supabase.from('horses').update({ [field]: value }).eq('id', horseId);
+    fetchHorses(currentRace.id);
+  };
+
+  const handleDeleteHorse = async (horseId: string, name: string) => {
+    if (!confirm('削除しますか？')) return;
+    await supabase.from('horses').delete().eq('id', horseId);
+    fetchHorses(currentRace.id);
+  };
+
+  const handleGenerateAIOdds = async () => {
+    if (!confirm('自動設定しますか？')) return;
+    const oddsTable: { [key: number]: number } = { 1: 1.8, 2: 3.2, 3: 5.5, 4: 8.8, 5: 14.2, 6: 22.5, 7: 35.0, 8: 58.0, 9: 84.0, 10: 120.0 };
+    for (const h of horses) {
+      const pop = h.popularity || 1;
+      const baseOdds = oddsTable[pop] ? oddsTable[pop] : (pop * 15.0);
+      const finalOdds = Math.max(1.1, Number((baseOdds + (Math.random() * 0.4) - 0.2).toFixed(1)));
+      await supabase.from('horses').update({ manual_odds: finalOdds }).eq('id', h.id);
+    }
+    alert('🤖 適用完了！');
+    fetchHorses(currentRace.id);
+  };
 
   const handleSettleFullRace = async () => {
     if (!currentRace || !firstHorse) return alert('1着を指定してください');
@@ -126,7 +236,7 @@ export default function SuperAdminConsole() {
           const payout = Math.floor(bet.amount * odds);
           await supabase.from('bets').update({ payout_amount: payout, is_claimed: true }).eq('id', bet.id);
           const { data: u } = await supabase.from('users').select('balance').eq('id', bet.user_id).single();
-          if (u) await supabase.from('users').update({ balance: u.balance + payout }).eq('id', bet.user_id);
+          if (u) await supabase.from('users').update({ balance: (u.balance || 0) + payout }).eq('id', bet.user_id);
         } else {
           await supabase.from('bets').update({ payout_amount: 0, is_claimed: true }).eq('id', bet.id);
         }
@@ -426,7 +536,13 @@ export default function SuperAdminConsole() {
           {adminTab === 'users' && (
             <div style={{ backgroundColor: '#ffffff', border: '2px solid #2563eb', borderRadius: '16px', padding: '28px' }}>
               <h2 style={{ margin: '0 0 20px 0', color: '#1e3a8a', fontSize: '20px', fontWeight: 'bold' }}>👤 プレイヤー管理</h2>
-              <div style={{ marginBottom: '24px' }}><select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{ padding: '10px 16px', borderRadius: '8px', border: '2px solid #2563eb', fontSize: '16px', fontWeight: 'bold', backgroundColor: '#eff6ff' }}>{users.map(u => (<option key={u.id} value={u.id}>{u.discord_name} ({u.balance.toLocaleString()} G)</option>))}</select></div>
+              <div style={{ marginBottom: '24px' }}>
+                <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{ padding: '10px 16px', borderRadius: '8px', border: '2px solid #2563eb', fontSize: '16px', fontWeight: 'bold', backgroundColor: '#eff6ff' }}>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.discord_name || 'ユーザー'} ({(u.balance || 0).toLocaleString()} G)</option>
+                  ))}
+                </select>
+              </div>
               {selectedUser && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', alignItems: 'end' }}>
                   <div><label style={labelStyle}>所持コイン</label><div style={{ display: 'flex', gap: '8px' }}><input type="number" value={customBalanceInput} onChange={e => setCustomBalanceInput(e.target.value)} style={inputStyle} /><button onClick={handleSetUserBalance} style={{padding:'10px', backgroundColor:'#2563eb', color:'#fff', borderRadius:'6px', border:'none', cursor:'pointer'}}>変更</button></div></div>
