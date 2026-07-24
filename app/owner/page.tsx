@@ -1,10 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+
+type HorseMaster = {
+  id: string;
+  name: string;
+  status: string;
+  passcode: string;
+  balance: number;
+};
 
 type Horse = {
   id: string;
+  owner_id: string;
   name: string;
   gender: string;
   age: number;
@@ -21,7 +30,6 @@ type Horse = {
   ability_rank?: string;
   growth_type?: string;
   ai_comment?: string;
-  released_at?: string;
 };
 
 type Stallion = {
@@ -31,587 +39,556 @@ type Stallion = {
   rank_bonus: number;
 };
 
-type Race = {
+type RaceEntry = {
   id: string;
-  name: string;
+  horse_id: string;
+  owner_id: string;
+  race_name: string;
+  status: string;
+  horses?: { name: string; jockey: string };
+  horse_masters?: { name: string };
 };
 
-export default function OwnerPage() {
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [ownerName, setOwnerName] = useState("");
-  const [passcode, setPasscode] = useState("");
+export default function AdminOwnersPage() {
+  const [pin, setPin] = useState("");
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [ownerId, setOwnerId] = useState("");
-  const [balance, setBalance] = useState<number>(0);
+  const [adminTab, setAdminTab] = useState<"horses" | "jockey_approve" | "add_horse" | "stallions" | "ai_settings" | "retired">("horses");
 
-  const [activeTab, setActiveTab] = useState<"horses" | "jockey_select" | "breed" | "race_apply" | "ai_chat">("horses");
-
+  const [owners, setOwners] = useState<HorseMaster[]>([]);
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string>("");
   const [horses, setHorses] = useState<Horse[]>([]);
+  const [raceEntries, setRaceEntries] = useState<RaceEntry[]>([]);
   const [stallions, setStallions] = useState<Stallion[]>([]);
-  const [availableRaces, setAvailableRaces] = useState<Race[]>([]);
-  const [availableJockeys, setAvailableJockeys] = useState<string[]>([]); // 自動取得騎手リスト
 
-  // 騎手変更申請フォーム
-  const [selectedJockeyHorseId, setSelectedJockeyHorseId] = useState("");
-  const [mainJockey, setMainJockey] = useState("");
-  const [tempJockey, setTempJockey] = useState("");
+  const [spawnRates, setSpawnRates] = useState({ SS: 5, S: 15, A: 30, B: 35, C: 15 });
 
-  // 生産用
-  const [selectedStallionId, setSelectedStallionId] = useState("");
-  const [motherHorseId, setMotherHorseId] = useState("");
-  const [foalName, setFoalName] = useState("");
+  const [newHorse, setNewHorse] = useState({
+    name: "",
+    gender: "牡",
+    age: 3,
+    color: "鹿毛",
+    father: "ディープインパクト",
+    mother: "自家製牝馬",
+    prize_money: 0,
+    races_count: 0,
+    wins_count: 0,
+    jockey: "武豊",
+    ability_rank: "A",
+  });
 
-  // レース申請
-  const [selectedHorseId, setSelectedHorseId] = useState("");
-  const [selectedRaceName, setSelectedRaceName] = useState("");
+  const [newStallion, setNewStallion] = useState({ name: "", fee: 3000000, rank_bonus: 10 });
 
-  // AIチャット
-  const [messages, setMessages] = useState<{ sender: "user" | "ai"; text: string }[]>([]);
-  const [inputMessage, setInputMessage] = useState("");
+  const [editingHorseId, setEditingHorseId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    prize_money: 0,
+    races_count: 0,
+    wins_count: 0,
+    ability_rank: "B",
+    ai_comment: "",
+    jockey: "",
+    temporary_jockey: "",
+  });
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const { data, error } = await supabase
-      .from("horse_masters")
-      .select("*")
-      .eq("name", ownerName)
-      .eq("passcode", passcode)
-      .single();
-
-    if (error || !data) {
-      alert("馬主名または合言葉が違います。");
-      return;
-    }
-
-    if (data.status !== "approved") {
-      alert("アカウントは現在【管理者の承認待ち】です。");
-      return;
-    }
-
-    setOwnerId(data.id);
-    setBalance(data.balance || 0);
-    setIsAuthenticated(true);
-    fetchOwnerData(data.id);
-    fetchStallions();
-    fetchRaces();
-    fetchJockeysFromRaces();
-
-    setMessages([
-      { sender: "ai", text: `お疲れ様です、${data.name}オーナー！専属AI調教師です。` }
-    ]);
-  };
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!ownerName || !passcode) return;
-
-    const { data: existing } = await supabase.from("horse_masters").select("id").eq("name", ownerName).single();
-    if (existing) {
-      alert("その馬主名は既に登録されています。");
-      return;
-    }
-
-    const { error } = await supabase.from("horse_masters").insert([
-      { name: ownerName, passcode, status: "pending", balance: 10000000 }
-    ]);
-
-    if (!error) {
-      alert("馬主登録申請を送信しました！管理者の承認をお待ちください。");
-      setIsRegisterMode(false);
+    if (pin === "0302") {
+      setIsAdminAuthenticated(true);
+    } else {
+      alert("暗証番号が違います！");
+      setPin("");
     }
   };
 
-  const fetchOwnerData = async (id: string) => {
-    const { data: owner } = await supabase.from("horse_masters").select("balance").eq("id", id).single();
-    if (owner) setBalance(owner.balance || 0);
+  useEffect(() => {
+    if (isAdminAuthenticated) {
+      fetchOwners();
+      fetchRaceEntries();
+      fetchStallions();
+      fetchSpawnRates();
+    }
+  }, [isAdminAuthenticated]);
 
-    const { data: h } = await supabase.from("horses").select("*").eq("owner_id", id);
-    if (h) {
-      const updated = h.map((horse) => {
-        if (horse.status === "育成放牧中" && horse.released_at) {
-          if (new Date(horse.released_at) <= new Date()) {
-            horse.status = "現役";
-          }
-        }
-        return horse;
-      });
-      setHorses(updated);
-      if (updated.length > 0) {
-        setSelectedHorseId(updated[0].id);
-        setSelectedJockeyHorseId(updated[0].id);
-        setMainJockey(updated[0].jockey || "");
-        setTempJockey(updated[0].temporary_jockey || "");
-      }
+  const fetchSpawnRates = async () => {
+    const { data } = await supabase.from("system_settings").select("value_json").eq("key", "spawn_rates").single();
+    if (data?.value_json) setSpawnRates(data.value_json);
+  };
+
+  const handleSaveRates = async () => {
+    const { error } = await supabase.from("system_settings").upsert({
+      key: "spawn_rates",
+      value_json: spawnRates,
+    });
+    if (!error) alert("AI素質出現確率を保存しました！");
+  };
+
+  const fetchOwners = async () => {
+    const { data } = await supabase.from("horse_masters").select("*").order("created_at", { ascending: false });
+    if (data) {
+      setOwners(data);
+      const approved = data.filter((o) => o.status === "approved");
+      if (approved.length > 0 && !selectedOwnerId) setSelectedOwnerId(approved[0].id);
     }
   };
 
-  // 🏇 レース馬柱 (race_horses) や races テーブルから自動的に騎手名を読み込んで連動！
-  const fetchJockeysFromRaces = async () => {
-    const { data } = await supabase.from("race_horses").select("jockey");
-    let jList: string[] = ["武豊", "ルメール", "川田将雅", "横山武史", "坂井瑠星", "松山弘平"];
-    if (data && data.length > 0) {
-      const dbJockeys = data.map((d) => d.jockey).filter((j): j is string => Boolean(j));
-      jList = Array.from(new Set([...jList, ...dbJockeys])); // 重複排除
+  useEffect(() => {
+    if (selectedOwnerId && isAdminAuthenticated) {
+      fetchHorses(selectedOwnerId);
     }
-    setAvailableJockeys(jList);
-    if (jList.length > 0 && !mainJockey) setMainJockey(jList[0]);
+  }, [selectedOwnerId, isAdminAuthenticated]);
+
+  const fetchHorses = async (ownerId: string) => {
+    const { data } = await supabase.from("horses").select("*").eq("owner_id", ownerId).order("created_at", { ascending: false });
+    if (data) setHorses(data);
+  };
+
+  const fetchRaceEntries = async () => {
+    const { data } = await supabase.from("race_entries").select("*, horses(name, jockey), horse_masters(name)").eq("status", "pending").order("created_at", { ascending: false });
+    if (data) setRaceEntries(data as any);
   };
 
   const fetchStallions = async () => {
     const { data } = await supabase.from("stallions").select("*").order("fee", { ascending: false });
-    if (data && data.length > 0) {
-      setStallions(data);
-      setSelectedStallionId(data[0].id);
-    }
+    if (data) setStallions(data);
   };
 
-  const fetchRaces = async () => {
-    const { data } = await supabase.from("races").select("*");
-    if (data && data.length > 0) {
-      setAvailableRaces(data);
-      setSelectedRaceName(data[0].name);
-    }
-  };
-
-  // 騎手変更申請
-  const handleApplyJockey = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedJockeyHorseId) return;
-
-    const { error } = await supabase.from("horses").update({
-      jockey: mainJockey,
-      temporary_jockey: tempJockey || null,
-      jockey_status: "pending", // 管理者承認待ちへ
-    }).eq("id", selectedJockeyHorseId);
-
-    if (!error) {
-      alert("騎手選択・変更申請を管理者に送信しました！承認をお待ちください。");
-      fetchOwnerData(ownerId);
-    }
-  };
-
-  // 生産ロジック
-  const handleBreed = async (type: "normal" | "random") => {
-    if (!foalName.trim()) {
-      alert("馬名を入力してください。");
-      return;
-    }
-
-    let fee = 100000;
-    let fatherName = "未知の種牡馬";
-    let motherNameStr = "自家製繁殖牝馬";
-
-    if (type === "normal") {
-      const stallion = stallions.find((s) => s.id === selectedStallionId);
-      if (!stallion) return;
-      fee = stallion.fee;
-      fatherName = stallion.name;
-
-      if (motherHorseId) {
-        const m = horses.find((h) => h.id === motherHorseId);
-        if (m) motherNameStr = m.name;
+  const handleApproveJockey = async (horse: Horse, isApproved: boolean) => {
+    if (isApproved) {
+      const { error } = await supabase.from("horses").update({ jockey_status: "approved" }).eq("id", horse.id);
+      if (!error) {
+        alert(`「${horse.name}」の騎手設定を承認しました！`);
+        fetchHorses(selectedOwnerId);
+      }
+    } else {
+      const { error } = await supabase.from("horses").update({
+        temporary_jockey: null,
+        jockey_status: "approved"
+      }).eq("id", horse.id);
+      if (!error) {
+        alert("騎手申請を却下しました。");
+        fetchHorses(selectedOwnerId);
       }
     }
+  };
 
-    if (balance < fee) {
-      alert(`所持金が足りません！（必要金額: ¥${fee.toLocaleString()}）`);
-      return;
+  const handleApproveOwner = async (ownerId: string) => {
+    const { error } = await supabase.from("horse_masters").update({ status: "approved" }).eq("id", ownerId);
+    if (!error) {
+      alert("馬主を承認しました！");
+      fetchOwners();
     }
+  };
 
-    const { data: setRes } = await supabase.from("system_settings").select("value_json").eq("key", "spawn_rates").single();
-    const rates = setRes?.value_json || { SS: 5, S: 15, A: 30, B: 35, C: 15 };
+  const handleDeleteOwner = async (ownerId: string, ownerName: string) => {
+    if (!confirm(`馬主「${ownerName}」を削除しますか？`)) return;
+    const { error } = await supabase.from("horse_masters").delete().eq("id", ownerId);
+    if (!error) {
+      alert("削除しました");
+      fetchOwners();
+    }
+  };
 
-    const rand = Math.random() * 100;
-    let rank = "B";
-    if (rand < rates.SS) rank = "SS";
-    else if (rand < rates.SS + rates.S) rank = "S";
-    else if (rand < rates.SS + rates.S + rates.A) rank = "A";
-    else if (rand < rates.SS + rates.S + rates.A + rates.B) rank = "B";
-    else rank = "C";
+  const handleApproveRace = async (entry: RaceEntry, status: "approved" | "rejected") => {
+    const { error } = await supabase.from("race_entries").update({ status }).eq("id", entry.id);
+    if (error) return;
 
-    const growthTypes = ["早熟", "普通", "晩成"];
-    const growth = growthTypes[Math.floor(Math.random() * growthTypes.length)];
+    if (status === "approved") {
+      const h = horses.find((x) => x.id === entry.horse_id);
+      const activeJockey = h?.temporary_jockey || h?.jockey || "未定";
 
-    let commentStage1 = "「ただ者ではない雰囲気を感じます…2日後のトレセン入厩をお楽しみに！」";
-    if (rank === "SS") commentStage1 = "「…とんでもない素質を秘めています！2日後の入厩が待ちきれません！」";
+      await supabase.from("race_horses").insert([
+        {
+          race_name: entry.race_name,
+          horse_id: entry.horse_id,
+          horse_name: entry.horses?.name || "出走馬",
+          owner_name: entry.horse_masters?.name || "馬主",
+          jockey: activeJockey,
+          frame_number: 1,
+          horse_number: 1,
+          popularity: 1,
+          odds: 2.0,
+        }
+      ]);
+      alert("出走確定し、連動騎手データ付きで馬柱へ登録しました！");
+    } else {
+      alert("出走申請を却下しました");
+    }
+    fetchRaceEntries();
+  };
 
-    const releaseTime = new Date();
-    releaseTime.setDate(releaseTime.getDate() + 2);
+  const handleUpdateHorseStatus = async (horse: Horse, newStatus: string) => {
+    const { error } = await supabase.from("horses").update({ status: newStatus }).eq("id", horse.id);
+    if (!error && newStatus === "引退") {
+      await supabase.from("race_horses").delete().eq("horse_id", horse.id);
+      alert(`「${horse.name}」を引退処理しました。`);
+    }
+    fetchHorses(selectedOwnerId);
+  };
 
-    const newBal = balance - fee;
-    await supabase.from("horse_masters").update({ balance: newBal }).eq("id", ownerId);
+  const handlePromoteToStallion = async (horse: Horse) => {
+    const inputFee = prompt(`「${horse.name}」の種付け料（円）を設定してください:`, "5000000");
+    if (inputFee === null) return;
+    const fee = Number(inputFee);
+    if (isNaN(fee)) return;
 
-    const colors = ["鹿毛", "栗毛", "黒鹿毛", "芦毛", "青毛"];
-    const randomColor = colors[Math.floor(Math.random() * colors.length)];
-    const randomGender = Math.random() > 0.5 ? "牡" : "牝";
+    const { error } = await supabase.from("stallions").insert([
+      { name: horse.name, fee: fee, rank_bonus: 15 }
+    ]);
+
+    if (!error) {
+      alert(`「${horse.name}」を種牡馬リストへ昇格登録しました！`);
+      fetchStallions();
+    }
+  };
+
+  const handleCompleteTraining = async (horse: Horse) => {
+    let finalComment = `【${horse.growth_type || "普通"}型】能力が本格化してきました！`;
+    if (horse.ability_rank === "SS") finalComment = `【${horse.growth_type || "普通"}型】圧倒的なオーラを纏って帰ってきました！`;
+
+    const { error } = await supabase.from("horses").update({
+      status: "現役",
+      ai_comment: finalComment,
+    }).eq("id", horse.id);
+
+    if (!error) {
+      alert(`「${horse.name}」の育成放牧を完了し、現役復帰させました！`);
+      fetchHorses(selectedOwnerId);
+    }
+  };
+
+  const handleAddStallion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStallion.name) return;
+    const { error } = await supabase.from("stallions").insert([newStallion]);
+    if (!error) {
+      alert("種牡馬を追加しました！");
+      setNewStallion({ name: "", fee: 3000000, rank_bonus: 10 });
+      fetchStallions();
+    }
+  };
+
+  const handleDeleteStallion = async (id: string, name: string) => {
+    if (!confirm(`種牡馬「${name}」を削除しますか？`)) return;
+    const { error } = await supabase.from("stallions").delete().eq("id", id);
+    if (!error) fetchStallions();
+  };
+
+  const handleAddHorseDirect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newHorse.name || !selectedOwnerId) return;
 
     const { error } = await supabase.from("horses").insert([
       {
-        owner_id: ownerId,
-        name: foalName,
-        gender: randomGender,
-        age: 2,
-        color: randomColor,
-        father: fatherName,
-        mother: motherNameStr,
-        status: "育成放牧中",
-        prize_money: 0,
-        races_count: 0,
-        wins_count: 0,
-        jockey: "未定",
+        ...newHorse,
+        owner_id: selectedOwnerId,
+        status: "現役",
         jockey_status: "approved",
-        ability_rank: rank,
-        growth_type: growth,
-        ai_comment: commentStage1,
-        released_at: releaseTime.toISOString(),
+        ai_comment: "管理者登録の期待馬です！",
       }
     ]);
 
     if (!error) {
-      alert(`🎉 仔馬「${foalName}」が誕生しました！`);
-      setFoalName("");
-      setBalance(newBal);
-      fetchOwnerData(ownerId);
-      setActiveTab("horses");
+      alert(`「${newHorse.name}」を追加しました！`);
+      fetchHorses(selectedOwnerId);
+      setAdminTab("horses");
     }
   };
 
-  const handleApplyRace = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedHorseId || !selectedRaceName) return;
-
-    const { error } = await supabase.from("race_entries").insert([
-      {
-        horse_id: selectedHorseId,
-        owner_id: ownerId,
-        race_name: selectedRaceName,
-        status: "pending",
-      }
-    ]);
-
-    if (!error) alert("出走申請を送信しました！");
+  const startEditing = (horse: Horse) => {
+    setEditingHorseId(horse.id);
+    setEditForm({
+      prize_money: horse.prize_money || 0,
+      races_count: horse.races_count || 0,
+      wins_count: horse.wins_count || 0,
+      ability_rank: horse.ability_rank || "B",
+      ai_comment: horse.ai_comment || "",
+      jockey: horse.jockey || "武豊",
+      temporary_jockey: horse.temporary_jockey || "",
+    });
   };
 
-  const handleRequestRetirement = async (horse: Horse) => {
-    if (!confirm(`本当に「${horse.name}」の引退申請を送信しますか？`)) return;
+  const handleUpdateHorseStats = async () => {
+    if (!editingHorseId) return;
 
-    const { error } = await supabase.from("horses").update({ status: "引退申請中" }).eq("id", horse.id);
+    const { error } = await supabase.from("horses").update({
+      prize_money: Number(editForm.prize_money),
+      races_count: Number(editForm.races_count),
+      wins_count: Number(editForm.wins_count),
+      ability_rank: editForm.ability_rank,
+      jockey: editForm.jockey,
+      temporary_jockey: editForm.temporary_jockey || null,
+      ai_comment: editForm.ai_comment,
+    }).eq("id", editingHorseId);
+
     if (!error) {
-      alert("引退申請を管理者に送信しました。");
-      fetchOwnerData(ownerId);
+      alert("競走馬の詳細データを更新しました！");
+      setEditingHorseId(null);
+      fetchHorses(selectedOwnerId);
     }
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputMessage.trim()) return;
-
-    const userText = inputMessage;
-    setMessages((prev) => [...prev, { sender: "user", text: userText }]);
-    setInputMessage("");
-
-    setTimeout(() => {
-      let aiResponse = "了解いたしました！しっかり調整しておきます！";
-      if (userText.includes("騎手") || userText.includes("乗り替わり")) {
-        aiResponse = "愛馬の脚質に合わせた騎手選定が勝利のカギになりますよ！選択画面から申請してくださいね。";
-      }
-      setMessages((prev) => [...prev, { sender: "ai", text: aiResponse }]);
-    }, 1000);
+  const handleUpdateOwnerBalance = async (owner: HorseMaster) => {
+    const input = prompt(`「${owner.name}」の新しい所持金（円）を入力してください:`, owner.balance?.toString() || "10000000");
+    if (input === null) return;
+    const newBal = Number(input);
+    if (!isNaN(newBal)) {
+      await supabase.from("horse_masters").update({ balance: newBal }).eq("id", owner.id);
+      fetchOwners();
+    }
   };
 
-  if (!isAuthenticated) {
+  if (!isAdminAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
-        <div className="bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl max-w-md w-full space-y-6">
-          <div className="text-center space-y-2">
-            <span className="text-4xl block">🏇</span>
-            <h1 className="text-2xl font-bold text-yellow-400">馬主専用ラウンジ</h1>
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-4">
+        <form onSubmit={handlePinSubmit} className="bg-slate-900 p-8 rounded-2xl max-w-sm w-full space-y-5 border border-slate-800 shadow-2xl">
+          <div className="text-center">
+            <span className="text-3xl mb-2 block">🔒</span>
+            <h1 className="text-xl font-bold text-yellow-400">管理者認証</h1>
           </div>
-
-          <form onSubmit={isRegisterMode ? handleRegister : handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">馬主名（オーナー名）</label>
-              <input type="text" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" required />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">合言葉（パスコード）</label>
-              <input type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)} className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" required />
-            </div>
-
-            <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg shadow-lg transition">
-              {isRegisterMode ? "管理者へ承認申請を送信" : "ラウンジへログイン"}
-            </button>
-          </form>
-
-          <div className="text-center pt-2 border-t border-slate-800">
-            <button onClick={() => setIsRegisterMode(!isRegisterMode)} className="text-xs text-yellow-400 hover:underline">
-              {isRegisterMode ? "ログイン画面へ戻る" : "新規馬主登録申請はこちら"}
-            </button>
+          <div>
+            <input type="password" placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value)} className="w-full px-4 py-3 bg-slate-800 rounded-lg text-center text-2xl font-mono text-white" maxLength={4} required autoFocus />
           </div>
-        </div>
+          <button type="submit" className="w-full bg-emerald-600 font-bold py-3 rounded-lg hover:bg-emerald-500 transition">認証</button>
+        </form>
       </div>
     );
   }
 
+  const pendingOwners = owners.filter((o) => o.status === "pending");
+  const approvedOwners = owners.filter((o) => o.status === "approved");
+  const currentOwner = owners.find((o) => o.id === selectedOwnerId);
+
   const activeHorses = horses.filter((h) => h.status !== "引退");
-  const femaleHorses = horses.filter((h) => h.gender === "牝");
+  const pendingJockeyHorses = horses.filter((h) => h.jockey_status === "pending");
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row">
       {/* 左サイドバー */}
-      <div className="w-full md:w-64 bg-slate-950 p-4 border-r border-slate-800 flex flex-col justify-between shrink-0 space-y-6">
-        <div className="space-y-6">
-          <div className="space-y-1">
-            <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest">Owner Lounge</span>
-            <h1 className="text-xl font-bold text-white truncate">{ownerName} 殿</h1>
-            <div className="bg-slate-900 border border-slate-800 rounded-lg p-2.5 mt-2">
-              <div className="text-[10px] text-slate-400">馬主残高（馬券/賞金共通）</div>
-              <div className="text-md font-bold text-yellow-400 font-mono">¥{balance.toLocaleString()}</div>
-            </div>
-          </div>
-
-          <nav className="space-y-1.5">
-            <button onClick={() => setActiveTab("horses")} className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-bold ${activeTab === "horses" ? "bg-emerald-800 text-white" : "text-slate-400 hover:bg-slate-900"}`}>
-              <span>🐴</span> 所有馬一覧 ({activeHorses.length})
-            </button>
-            <button onClick={() => setActiveTab("jockey_select")} className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-bold ${activeTab === "jockey_select" ? "bg-emerald-800 text-white" : "text-slate-400 hover:bg-slate-900"}`}>
-              <span>🏇</span> 主戦・点乗り騎手選択
-            </button>
-            <button onClick={() => setActiveTab("breed")} className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-bold ${activeTab === "breed" ? "bg-emerald-800 text-white" : "text-slate-400 hover:bg-slate-900"}`}>
-              <span>🧬</span> 競走馬の生産 / 10万ガチャ
-            </button>
-            <button onClick={() => setActiveTab("race_apply")} className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-bold ${activeTab === "race_apply" ? "bg-emerald-800 text-white" : "text-slate-400 hover:bg-slate-900"}`}>
-              <span>🏁</span> レース出走申請
-            </button>
-            <button onClick={() => setActiveTab("ai_chat")} className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-bold ${activeTab === "ai_chat" ? "bg-emerald-800 text-white" : "text-slate-400 hover:bg-slate-900"}`}>
-              <span>💬</span> AI調教師相談室
-            </button>
-          </nav>
+      <div className="w-full md:w-80 bg-slate-900/90 p-4 border-r border-slate-800 space-y-6 shrink-0">
+        <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+          <h2 className="text-sm font-bold text-yellow-400">🏇 登録馬主・クラブ</h2>
+          <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded">{approvedOwners.length}名</span>
         </div>
 
-        <button onClick={() => setIsAuthenticated(false)} className="w-full bg-slate-900 text-slate-400 text-xs py-2 rounded-lg border border-slate-800">ログアウト</button>
-      </div>
-
-      {/* 右メインコンテンツ */}
-      <div className="flex-1 p-4 md:p-8 space-y-6 overflow-y-auto">
-
-        {/* 所有馬タブ */}
-        {activeTab === "horses" && (
-          <div className="space-y-4">
-            <h2 className="text-xl font-bold text-yellow-400">🐴 所有競走馬一覧</h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {activeHorses.map((horse) => (
-                <div key={horse.id} className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-bold text-white">{horse.name}</h3>
-                        <span className="bg-yellow-950 text-yellow-300 border border-yellow-700 text-[10px] font-mono font-bold px-2 py-0.5 rounded">
-                          {horse.ability_rank || "B"}
-                        </span>
-                      </div>
-                      <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded mt-1 ${
-                        horse.status === "育成放牧中" ? "bg-amber-950 text-amber-300 border border-amber-700 animate-pulse" :
-                        "bg-emerald-950 text-emerald-300 border border-emerald-700"
-                      }`}>
-                        {horse.status}
-                      </span>
-                    </div>
-                    <span className="bg-slate-900 text-slate-300 text-xs px-2.5 py-1 rounded font-bold">
-                      {horse.races_count || 0}戦{horse.wins_count || 0}勝
-                    </span>
+        {pendingOwners.length > 0 && (
+          <div className="bg-amber-950/50 border border-amber-600/60 p-3 rounded-xl space-y-2">
+            <h3 className="text-xs font-bold text-amber-400">⏳ 承認待ち新規申請 ({pendingOwners.length}件)</h3>
+            <div className="space-y-2">
+              {pendingOwners.map((owner) => (
+                <div key={owner.id} className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex justify-between items-center text-xs">
+                  <div>
+                    <div className="font-bold text-white">{owner.name}</div>
+                    <div className="text-[10px] text-slate-500">Pass: {owner.passcode}</div>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
-                    <div>性齢: {horse.gender}{horse.age}歳 ({horse.color})</div>
-                    <div>主戦騎手: <span className="text-yellow-400 font-bold">{horse.jockey || "未定"}</span></div>
-                    {horse.temporary_jockey && (
-                      <div className="col-span-2 text-blue-300 font-bold">
-                        次走テン乗り騎手: {horse.temporary_jockey} {horse.jockey_status === "pending" && "(管理者承認待ち)"}
-                      </div>
-                    )}
-                    <div className="col-span-2 text-slate-400">血統: 父 {horse.father} × 母 {horse.mother}</div>
-                    <div className="col-span-2 text-yellow-400 font-bold">獲得賞金: ¥{(horse.prize_money || 0).toLocaleString()}</div>
+                  <div className="flex gap-1">
+                    <button onClick={() => handleApproveOwner(owner.id)} className="bg-emerald-600 text-white font-bold px-2 py-1 rounded text-[11px]">承認</button>
+                    <button onClick={() => handleDeleteOwner(owner.id, owner.name)} className="bg-rose-950 text-rose-300 px-2 py-1 rounded text-[11px]">拒否</button>
                   </div>
-
-                  {horse.ai_comment && (
-                    <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-700 text-xs text-emerald-300 italic">
-                      💬 AI診断: {horse.ai_comment}
-                    </div>
-                  )}
-
-                  {horse.status !== "引退申請中" && (
-                    <div className="pt-2 border-t border-slate-700 text-right">
-                      <button onClick={() => handleRequestRetirement(horse)} className="bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800 text-xs px-3 py-1 rounded">
-                        🛑 自主引退申請
-                      </button>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* 🏇 騎手選択タブ */}
-        {activeTab === "jockey_select" && (
-          <div className="space-y-6 max-w-xl">
-            <div>
-              <h2 className="text-xl font-bold text-yellow-400">🏇 主戦騎手 ＆ テン乗り（点乗り）騎手選択</h2>
-              <p className="text-xs text-slate-400 mt-1">馬券・レース画面の自動連動騎手リストから選んで管理者に決定申請を送信します。</p>
-            </div>
-
-            <form onSubmit={handleApplyJockey} className="bg-slate-800 p-6 rounded-xl border border-slate-700 space-y-4">
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">対象の所有馬</label>
-                <select
-                  value={selectedJockeyHorseId}
-                  onChange={(e) => {
-                    setSelectedJockeyHorseId(e.target.value);
-                    const h = horses.find((x) => x.id === e.target.value);
-                    if (h) {
-                      setMainJockey(h.jockey || availableJockeys[0] || "");
-                      setTempJockey(h.temporary_jockey || "");
-                    }
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-                >
-                  {activeHorses.map((h) => (
-                    <option key={h.id} value={h.id}>{h.name} (現在主戦: {h.jockey || "未定"})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">主戦騎手（基本騎乗者）</label>
-                <select
-                  value={mainJockey}
-                  onChange={(e) => setMainJockey(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-yellow-400 font-bold"
-                >
-                  {availableJockeys.map((j) => (
-                    <option key={j} value={j}>{j}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">次走テン乗り（乗り替わり）騎手（任意）</label>
-                <select
-                  value={tempJockey}
-                  onChange={(e) => setTempJockey(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-blue-300 font-bold"
-                >
-                  <option value="">指定なし（主戦騎手が継続騎乗）</option>
-                  {availableJockeys.map((j) => (
-                    <option key={j} value={j}>{j}</option>
-                  ))}
-                </select>
-              </div>
-
-              <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 font-bold text-white py-3 rounded-lg text-sm shadow">
-                管理者へ騎手指定申請を送信
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* 生産 ＆ ガチャ */}
-        {activeTab === "breed" && (
-          <div className="space-y-6 max-w-2xl">
-            <h2 className="text-xl font-bold text-emerald-400">🧬 競走馬の生産 ＆ ランダム10万ガチャ</h2>
-
-            <div className="bg-gradient-to-r from-amber-950/60 to-slate-800 p-5 rounded-xl border border-amber-600/50 space-y-3">
-              <div className="flex justify-between items-center">
-                <h3 className="text-md font-bold text-yellow-400">🎲 10万円 一発ランダム生産</h3>
-                <span className="text-sm font-mono font-bold text-yellow-400">¥100,000</span>
-              </div>
-              <div className="flex gap-2">
-                <input type="text" placeholder="仔馬の名前を入力" value={foalName} onChange={(e) => setFoalName(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
-                <button onClick={() => handleBreed("random")} className="bg-amber-600 font-bold text-slate-950 px-5 py-2 rounded-lg text-sm">10万円で生産</button>
-              </div>
-            </div>
-
-            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4">
-              <h3 className="text-md font-bold text-slate-200">🐴 種牡馬 ＆ 自家牝馬で本格生産</h3>
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">1. 種牡馬選択</label>
-                <select value={selectedStallionId} onChange={(e) => setSelectedStallionId(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
-                  {stallions.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name} (種付け料: ¥{s.fee.toLocaleString()})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">2. 繁殖牝馬選択</label>
-                <select value={motherHorseId} onChange={(e) => setMotherHorseId(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
-                  <option value="">自家製繁殖牝馬（初期）</option>
-                  {femaleHorses.map((h) => (
-                    <option key={h.id} value={h.id}>{h.name} ({h.age}歳牝馬)</option>
-                  ))}
-                </select>
-              </div>
-
-              <button onClick={() => handleBreed("normal")} className="w-full bg-emerald-600 font-bold text-white py-3 rounded-lg text-sm">🎉 種付けして仔馬を生産する</button>
-            </div>
-          </div>
-        )}
-
         {/* 出走申請 */}
-        {activeTab === "race_apply" && (
-          <div className="space-y-6 max-w-xl">
-            <h2 className="text-xl font-bold text-blue-400">🏁 レース出走申請</h2>
-            <form onSubmit={handleApplyRace} className="bg-slate-800 p-6 rounded-xl border border-slate-700 space-y-4">
-              <div>
-                <label className="text-xs text-slate-300 block mb-1">出走させる所有馬</label>
-                <select value={selectedHorseId} onChange={(e) => setSelectedHorseId(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
-                  {activeHorses.map((h) => (
-                    <option key={h.id} value={h.id}>{h.name} ({h.status})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-300 block mb-1">出走希望レース</label>
-                <select value={selectedRaceName} onChange={(e) => setSelectedRaceName(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
-                  {availableRaces.map((r) => (
-                    <option key={r.id} value={r.name}>{r.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 font-bold text-white py-3 rounded-lg text-sm">出走申請を送信</button>
-            </form>
+        {raceEntries.length > 0 && (
+          <div className="bg-blue-950/50 border border-blue-600/60 p-3 rounded-xl space-y-2">
+            <h3 className="text-xs font-bold text-blue-400">🏁 レース出走申請 ({raceEntries.length}件)</h3>
+            <div className="space-y-2">
+              {raceEntries.map((entry) => (
+                <div key={entry.id} className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 space-y-1 text-xs">
+                  <div className="font-bold text-white">{entry.horses?.name || "馬"}</div>
+                  <div className="text-blue-300 text-[11px]">希望: {entry.race_name}</div>
+                  <div className="flex gap-1 pt-1">
+                    <button onClick={() => handleApproveRace(entry, "approved")} className="w-full bg-blue-600 text-white font-bold py-1 rounded text-[11px]">確定</button>
+                    <button onClick={() => handleApproveRace(entry, "rejected")} className="bg-slate-800 text-slate-300 px-2 py-1 rounded text-[11px]">却下</button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* AI相談 */}
-        {activeTab === "ai_chat" && (
-          <div className="space-y-4 max-w-2xl">
-            <h2 className="text-xl font-bold text-emerald-400">💬 専属AI調教師相談室</h2>
-            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 flex flex-col h-[450px]">
-              <div className="flex-1 bg-slate-900 rounded-lg p-3 overflow-y-auto space-y-3 border border-slate-700">
-                {messages.map((m, idx) => (
-                  <div key={idx} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[80%] rounded-xl px-3.5 py-2 text-sm ${m.sender === "user" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-200 border border-slate-700"}`}>
-                      {m.text}
+        <div className="space-y-2">
+          {approvedOwners.map((owner) => (
+            <div key={owner.id} className={`p-3 rounded-xl text-xs border flex justify-between items-center ${selectedOwnerId === owner.id ? "bg-emerald-950/80 border-emerald-500 text-white" : "bg-slate-900/80 border-slate-800 text-slate-300"}`}>
+              <button onClick={() => setSelectedOwnerId(owner.id)} className="flex-1 text-left font-bold space-y-1">
+                <div className="text-sm text-white">{owner.name}</div>
+                <div className="text-yellow-400 font-mono font-bold">残高: ¥{(owner.balance || 0).toLocaleString()}</div>
+              </button>
+              <div className="flex flex-col gap-1 pl-2">
+                <button onClick={() => handleUpdateOwnerBalance(owner)} className="bg-slate-800 text-yellow-300 text-[10px] px-2 py-1 rounded">残高変更</button>
+                <button onClick={() => handleDeleteOwner(owner.id, owner.name)} className="bg-rose-950 text-rose-300 text-[10px] px-2 py-1 rounded">クラブ削除</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 右メイン */}
+      <div className="flex-1 p-6 space-y-6 overflow-y-auto">
+        <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+          <div>
+            <h1 className="text-2xl font-bold text-emerald-400">馬主・競走馬・騎手 コントロールセンター</h1>
+            <p className="text-xs text-slate-400 mt-1">選択中馬主: <span className="text-yellow-400 font-bold">{currentOwner?.name || "未選択"}</span></p>
+          </div>
+          <span className="text-xs bg-emerald-900/50 text-emerald-300 border border-emerald-700 px-3 py-1 rounded-full font-mono">管理者 (0302)</span>
+        </div>
+
+        {/* タブ切り替え */}
+        <div className="flex gap-2 border-b border-slate-800 pb-3 overflow-x-auto text-xs font-bold">
+          <button onClick={() => setAdminTab("horses")} className={`px-4 py-2 rounded-lg ${adminTab === "horses" ? "bg-emerald-600 text-white" : "bg-slate-900 text-slate-400"}`}>
+            📋 競走馬データ詳細 ({activeHorses.length})
+          </button>
+          <button onClick={() => setAdminTab("jockey_approve")} className={`px-4 py-2 rounded-lg relative ${adminTab === "jockey_approve" ? "bg-emerald-600 text-white" : "bg-slate-900 text-slate-400"}`}>
+            🏇 騎手申請の承認 ({pendingJockeyHorses.length})
+            {pendingJockeyHorses.length > 0 && <span className="absolute -top-1 -right-1 bg-rose-600 text-white rounded-full w-4 h-4 text-[9px] flex items-center justify-center animate-bounce">{pendingJockeyHorses.length}</span>}
+          </button>
+          <button onClick={() => setAdminTab("add_horse")} className={`px-4 py-2 rounded-lg ${adminTab === "add_horse" ? "bg-emerald-600 text-white" : "bg-slate-900 text-slate-400"}`}>
+            ➕ 競走馬を直接登録
+          </button>
+          <button onClick={() => setAdminTab("stallions")} className={`px-4 py-2 rounded-lg ${adminTab === "stallions" ? "bg-emerald-600 text-white" : "bg-slate-900 text-slate-400"}`}>
+            🧬 種牡馬マスター ({stallions.length})
+          </button>
+          <button onClick={() => setAdminTab("ai_settings")} className={`px-4 py-2 rounded-lg ${adminTab === "ai_settings" ? "bg-emerald-600 text-white" : "bg-slate-900 text-slate-400"}`}>
+            ⚙️ AI素質確率設定
+          </button>
+        </div>
+
+        {/* 競走馬データ詳細 */}
+        {adminTab === "horses" && (
+          <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-4">
+            <h3 className="text-md font-bold text-slate-200">📋 所有馬一覧</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left text-slate-300">
+                <thead className="bg-slate-950 text-slate-400 uppercase text-[10px]">
+                  <tr>
+                    <th className="p-3">馬名</th>
+                    <th className="p-3">主戦騎手 / テン乗り</th>
+                    <th className="p-3">素質</th>
+                    <th className="p-3">状態</th>
+                    <th className="p-3">成績 / 賞金</th>
+                    <th className="p-3">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {activeHorses.map((horse) => (
+                    <tr key={horse.id}>
+                      <td className="p-3 font-bold text-white">{horse.name}</td>
+                      <td className="p-3">
+                        <div className="text-yellow-400 font-bold">主: {horse.jockey || "未定"}</div>
+                        {horse.temporary_jockey && <div className="text-blue-300 text-[10px]">テン: {horse.temporary_jockey}</div>}
+                      </td>
+                      <td className="p-3 font-mono font-bold text-yellow-400">{horse.ability_rank || "B"}</td>
+                      <td className="p-3 font-bold text-emerald-400">{horse.status}</td>
+                      <td className="p-3 font-mono">{horse.races_count}戦{horse.wins_count}勝 / ¥{(horse.prize_money || 0).toLocaleString()}</td>
+                      <td className="p-3 flex gap-1">
+                        <button onClick={() => startEditing(horse)} className="bg-slate-800 text-yellow-300 px-2 py-1 rounded text-[10px]">⚖️ 編集</button>
+                        {horse.status === "育成放牧中" && <button onClick={() => handleCompleteTraining(horse)} className="bg-emerald-600 text-white px-2 py-1 rounded text-[10px]">✨ 育成完了</button>}
+                        {horse.gender === "牡" && <button onClick={() => handlePromoteToStallion(horse)} className="bg-yellow-600 text-slate-950 px-2 py-1 rounded text-[10px]">👑 種牡馬昇格</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* 🏇 騎手承認タブ */}
+        {adminTab === "jockey_approve" && (
+          <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4">
+            <h3 className="text-md font-bold text-yellow-400">🏇 馬主からの騎手変更・決定申請一覧</h3>
+            {pendingJockeyHorses.length === 0 ? (
+              <p className="text-xs text-slate-500 py-6 text-center">現在、承認待ちの騎手変更申請はありません。</p>
+            ) : (
+              <div className="space-y-3">
+                {pendingJockeyHorses.map((h) => (
+                  <div key={h.id} className="bg-slate-950 p-4 rounded-lg border border-slate-800 flex justify-between items-center text-xs">
+                    <div>
+                      <div className="font-bold text-white text-sm">{h.name}</div>
+                      <div className="text-yellow-400">申請主戦騎手: {h.jockey}</div>
+                      {h.temporary_jockey && <div className="text-blue-300">申請テン乗り騎手: {h.temporary_jockey}</div>}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleApproveJockey(h, true)} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded shadow">
+                        承認・確定
+                      </button>
+                      <button onClick={() => handleApproveJockey(h, false)} className="bg-rose-950 hover:bg-rose-900 text-rose-300 px-3 py-2 rounded">
+                        却下
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
-
-              <form onSubmit={handleSendMessage} className="mt-3 flex gap-2">
-                <input type="text" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} placeholder="質問を入力..." className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
-                <button type="submit" className="bg-emerald-600 text-white font-bold px-4 py-2 rounded-lg text-sm">送信</button>
-              </form>
-            </div>
+            )}
           </div>
         )}
 
+        {/* 競走馬直接登録 */}
+        {adminTab === "add_horse" && (
+          <form onSubmit={handleAddHorseDirect} className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4 max-w-2xl">
+            <h3 className="text-md font-bold text-yellow-400">➕ 競走馬を直接登録</h3>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <input type="text" placeholder="馬名" value={newHorse.name} onChange={(e) => setNewHorse({ ...newHorse, name: e.target.value })} className="bg-slate-950 border border-slate-800 rounded px-3 py-2 text-white" required />
+              <select value={newHorse.gender} onChange={(e) => setNewHorse({ ...newHorse, gender: e.target.value })} className="bg-slate-950 border border-slate-800 rounded px-3 py-2 text-white"><option value="牡">牡</option><option value="牝">牝</option></select>
+              <input type="text" placeholder="主戦騎手" value={newHorse.jockey} onChange={(e) => setNewHorse({ ...newHorse, jockey: e.target.value })} className="bg-slate-950 border border-slate-800 rounded px-3 py-2 text-white" />
+            </div>
+            <button type="submit" className="w-full bg-emerald-600 font-bold text-white py-2.5 rounded text-xs">登録保存</button>
+          </form>
+        )}
+
+        {/* 種牡馬マスター */}
+        {adminTab === "stallions" && (
+          <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4 max-w-2xl">
+            <h3 className="text-md font-bold text-emerald-400">🧬 種牡馬マスター管理</h3>
+            <form onSubmit={handleAddStallion} className="grid grid-cols-3 gap-2 text-xs">
+              <input type="text" placeholder="種牡馬名" value={newStallion.name} onChange={(e) => setNewStallion({ ...newStallion, name: e.target.value })} className="bg-slate-950 border border-slate-800 rounded px-3 py-2 text-white" required />
+              <input type="number" placeholder="種付け料" value={newStallion.fee} onChange={(e) => setNewStallion({ ...newStallion, fee: Number(e.target.value) })} className="bg-slate-950 border border-slate-800 rounded px-3 py-2 text-white" required />
+              <button type="submit" className="bg-emerald-600 font-bold text-white rounded px-3 py-2">追加</button>
+            </form>
+          </div>
+        )}
+
+        {/* AI確率 */}
+        {adminTab === "ai_settings" && (
+          <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4 max-w-xl">
+            <h3 className="text-md font-bold text-amber-400">⚙️ AI素質確率手動設定</h3>
+            <div className="grid grid-cols-5 gap-2 text-xs">
+              {["SS", "S", "A", "B", "C"].map((r) => (
+                <div key={r}>
+                  <label className="text-slate-300 block mb-1 font-bold">{r}%</label>
+                  <input type="number" value={(spawnRates as any)[r]} onChange={(e) => setSpawnRates({ ...spawnRates, [r]: Number(e.target.value) })} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-2 text-white text-center font-bold" />
+                </div>
+              ))}
+            </div>
+            <button onClick={handleSaveRates} className="bg-amber-600 font-bold text-slate-950 px-5 py-2 rounded text-xs">保存</button>
+          </div>
+        )}
       </div>
+
+      {/* モーダル */}
+      {editingHorseId && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-700 p-6 rounded-xl max-w-md w-full space-y-4">
+            <h3 className="text-md font-bold text-yellow-400">⚖️ 詳細データ・騎手編集</h3>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-slate-400 block mb-1">主戦騎手</label>
+                <input type="text" value={editForm.jockey} onChange={(e) => setEditForm({ ...editForm, jockey: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white" />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">テン乗り騎手</label>
+                <input type="text" value={editForm.temporary_jockey} onChange={(e) => setEditForm({ ...editForm, temporary_jockey: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white" />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button onClick={handleUpdateHorseStats} className="w-full bg-emerald-600 font-bold text-white py-2 rounded text-xs">保存</button>
+              <button onClick={() => setEditingHorseId(null)} className="bg-slate-800 text-slate-400 px-3 py-2 rounded text-xs">キャンセル</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
