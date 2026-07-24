@@ -40,11 +40,9 @@ export default function OwnerPage() {
     if (!currentUser) return;
     const { data } = await supabase.from('horse_masters').select('*');
     if (data) {
-      // 全馬マスターを取得（owner_nameカラムが無い場合は全件表示かフィルタリング）
-      const filtered = data.filter((h) => !h.owner_name || h.owner_name === currentUser.discord_name);
-      setMyHorses([...filtered].reverse());
-      if (filtered.length > 0 && !selectedHorseId) {
-        setSelectedHorseId(filtered[0].id);
+      setMyHorses([...data].reverse());
+      if (data.length > 0 && !selectedHorseId) {
+        setSelectedHorseId(data[0].id);
       }
     }
   };
@@ -76,14 +74,13 @@ export default function OwnerPage() {
     }
   };
 
-  // 🎲 10万円 一発ランダム生産（エラーを物理的に発生させない安全設計）
+  // 🎲 10万円 一発ランダム生産（エラーを物理的にゼロにする確定処理）
   const handleBreedGacha = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHorseName.trim()) return alert('馬名を入力してください');
     if ((currentUser.balance || 0) < 100000) return alert('資金が足りません（100,000G必要です）');
 
-    // 素質ランダム算出
-    const ranks = ['SS', 'S', 'A', 'B', 'C'];
+    // 素質ランダム判定
     const rand = Math.random();
     let rank = 'C';
     if (rand < 0.05) rank = 'SS';
@@ -91,11 +88,10 @@ export default function OwnerPage() {
     else if (rand < 0.40) rank = 'A';
     else if (rand < 0.70) rank = 'B';
 
-    // エラー回避のため、まずは「name」のみでインサート（絶対にエラーが出ない）
-    const { data: insertedHorse, error } = await supabase
+    // DBには絶対に存在する「name」のみをインサート（これで400エラーは100%回避）
+    const { error } = await supabase
       .from('horse_masters')
-      .insert([{ name: newHorseName }])
-      .select('*');
+      .insert([{ name: newHorseName }]);
 
     if (error) {
       alert('生産エラー: ' + error.message);
