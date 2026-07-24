@@ -110,7 +110,7 @@ export default function AdminOwnersPage() {
   }, [isAdminAuthenticated]);
 
   const fetchSpawnRates = async () => {
-    const { data } = await supabase.from("system_settings").select("value_json").eq("key", "spawn_rates").single();
+    const { data } = await supabase.from("system_settings").select("*").eq("key", "spawn_rates").maybeSingle();
     if (data?.value_json) setSpawnRates(data.value_json);
   };
 
@@ -143,7 +143,7 @@ export default function AdminOwnersPage() {
   };
 
   const fetchRaceEntries = async () => {
-    const { data } = await supabase.from("race_entries").select("*, horses(name, jockey), horse_masters(name)").eq("status", "pending").order("created_at", { ascending: false });
+    const { data } = await supabase.from("race_entries").select("*, horses(*), horse_masters(*)").eq("status", "pending").order("created_at", { ascending: false });
     if (data) setRaceEntries(data as any);
   };
 
@@ -152,12 +152,11 @@ export default function AdminOwnersPage() {
     if (data) setStallions(data);
   };
 
-  // 🔑 騎手乗替・主戦騎手決定の承認処理
   const handleApproveJockey = async (horse: Horse, isApproved: boolean) => {
     if (isApproved) {
       const { error } = await supabase.from("horses").update({ jockey_status: "approved" }).eq("id", horse.id);
       if (!error) {
-        alert(`「${horse.name}」の騎手設定（主戦: ${horse.jockey} / テン乗り: ${horse.temporary_jockey || "なし"}）を承認しました！`);
+        alert(`「${horse.name}」の騎手設定を承認しました！`);
         fetchHorses(selectedOwnerId);
       }
     } else {
@@ -189,13 +188,11 @@ export default function AdminOwnersPage() {
     }
   };
 
-  // 出走確定＆自動馬柱追加（騎手も連動！）
   const handleApproveRace = async (entry: RaceEntry, status: "approved" | "rejected") => {
     const { error } = await supabase.from("race_entries").update({ status }).eq("id", entry.id);
     if (error) return;
 
     if (status === "approved") {
-      // 出走馬の騎手判定（テン乗りがあれば優先）
       const h = horses.find((x) => x.id === entry.horse_id);
       const activeJockey = h?.temporary_jockey || h?.jockey || "未定";
 
@@ -362,7 +359,6 @@ export default function AdminOwnersPage() {
   const currentOwner = owners.find((o) => o.id === selectedOwnerId);
 
   const activeHorses = horses.filter((h) => h.status !== "引退");
-  const retiredHorses = horses.filter((h) => h.status === "引退");
   const pendingJockeyHorses = horses.filter((h) => h.jockey_status === "pending");
 
   return (
