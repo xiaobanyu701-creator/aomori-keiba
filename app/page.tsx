@@ -19,7 +19,6 @@ export default function ProfessionalAomoriKeibaUser() {
   const [discordInput, setDiscordInput] = useState('');
   const [pinInput, setPinInput] = useState('');
 
-  // ★ タブに 'inquiry' を追加
   const [activeTab, setActiveTab] = useState<'card' | 'umabashira' | 'ranking' | 'betting' | 'history' | 'inquiry'>('card');
   const [betType, setBetType] = useState<'単勝'|'複勝'|'枠連'|'馬連'|'ワイド'|'馬単'|'3連複'|'3連単'>('単勝');
   const [rankingType, setRankingType] = useState<'単勝' | '馬連' | '3連単'>('単勝');
@@ -35,7 +34,8 @@ export default function ProfessionalAomoriKeibaUser() {
   const [horseSel1, setHorseSel1] = useState('');
   const [horseSel2, setHorseSel2] = useState('');
   const [horseSel3, setHorseSel3] = useState('');
-  const [comboAmount, setComboAmount] = useState('1000');
+  // ★ 初期値を 100 に変更
+  const [comboAmount, setComboAmount] = useState('100');
 
   const [myHistory, setMyHistory] = useState<any[]>([]);
   const [rankingData, setRankingData] = useState<any[]>([]);
@@ -62,13 +62,13 @@ export default function ProfessionalAomoriKeibaUser() {
   useEffect(() => { if (activeTab === 'ranking' && horses.length > 0) generateRanking(rankingType); }, [activeTab, rankingType, horses]);
   useEffect(() => { if (currentUser && activeTab === 'inquiry') fetchMyInquiries(); }, [activeTab, currentUser]);
 
-  const fetchRaces = async () => { const { data } = await supabase.from('races').select('*').order('race_number'); if (data) setRaces(data); };
-  const fetchHorses = async (raceId: string) => { const { data } = await supabase.from('horses').select('*').eq('race_id', raceId).order('horse_number'); if (data) setHorses(data); };
-  const fetchMyHistory = async () => { const { data } = await supabase.from('bets').select('*, horses(name, horse_number), races(title)').eq('user_id', currentUser.id).order('created_at', { ascending: false }); if (data) setMyHistory(data); };
+  const fetchRaces = async () => { const { data } = await supabase.from('races').select('*'); if (data) setRaces([...data].sort((a, b) => (a.race_number || 0) - (b.race_number || 0))); };
+  const fetchHorses = async (raceId: string) => { const { data } = await supabase.from('horses').select('*').eq('race_id', raceId); if (data) setHorses([...data].sort((a, b) => (a.horse_number || 0) - (b.horse_number || 0))); };
+  const fetchMyHistory = async () => { const { data } = await supabase.from('bets').select('*, horses(name, horse_number), races(title)').eq('user_id', currentUser.id); if (data) setMyHistory([...data].reverse()); };
 
   const fetchMyInquiries = async () => {
-    const { data } = await supabase.from('inquiries').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false });
-    if (data) setMyInquiries(data);
+    const { data } = await supabase.from('inquiries').select('*').eq('user_id', currentUser.id);
+    if (data) setMyInquiries([...data].reverse());
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -135,11 +135,12 @@ export default function ProfessionalAomoriKeibaUser() {
     setRankingData(list.slice(0, 10));
   };
 
+  // ★ 100G 未満の購入をブロックするチェックを追加
   const addToCart = (type: string, selection: string, amount: number) => {
     if (!selection || selection.includes('')) return alert('買い目を正しく選択してください');
     const selArr = selection.split('-');
     if (new Set(selArr).size !== selArr.length) return alert('同じ馬が複数選択されています！');
-    if (amount <= 0) return alert('金額を入力してください');
+    if (!amount || amount < 100) return alert('最低購入金額は100Gからです！');
     setCart([...cart, { type, selection, amount }]);
   };
 
@@ -175,7 +176,7 @@ export default function ProfessionalAomoriKeibaUser() {
           {currentUser ? (
             <div style={{ backgroundColor: '#172554', padding: '8px 20px', borderRadius: '25px', display: 'flex', gap: '16px', border: '1px solid #3b82f6' }}>
               <span>👤 {currentUser.discord_name}</span>
-              <span style={{ color: '#fef08a', fontWeight: 'bold' }}>{currentUser.balance.toLocaleString()} G</span>
+              <span style={{ color: '#fef08a', fontWeight: 'bold' }}>{(currentUser.balance || 0).toLocaleString()} G</span>
             </div>
           ) : <span style={{ color: '#93c5fd', fontSize: '14px' }}>未ログイン</span>}
           <Link href="/admin" style={{ backgroundColor: '#2563eb', color: '#fff', padding: '8px 16px', borderRadius: '8px', textDecoration: 'none', fontWeight: 'bold', fontSize: '14px', border: '1px solid #60a5fa' }}>⚙️ 運営管理↗</Link>
@@ -215,7 +216,6 @@ export default function ProfessionalAomoriKeibaUser() {
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
               <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' }}>
                 
-                {/* ★ 問い合わせタブを追加 */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '20px' }}>
                   <TabBtn active={activeTab==='card'} onClick={()=>setActiveTab('card')} text="📋 出馬表" />
                   <TabBtn active={activeTab==='umabashira'} onClick={()=>setActiveTab('umabashira')} text="📰 新・馬柱" />
@@ -301,7 +301,8 @@ export default function ProfessionalAomoriKeibaUser() {
                           <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                             <span style={{ fontWeight: 'bold', fontSize: '16px' }}>{h.horse_number}番 {h.name} ({h.age || 3}歳) - 🏇 {h.jockey}</span>
                             <div style={{ display: 'flex', gap: '10px' }}>
-                              <input type="number" placeholder="金額(G)" value={singleBetAmounts[h.horse_number] || ''} onChange={e=>setSingleBetAmounts({...singleBetAmounts, [h.horse_number]: e.target.value})} style={{ width: '100px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', textAlign: 'right' }} />
+                              {/* ★ 最低100G〜 */}
+                              <input type="number" step="100" min="100" placeholder="100G〜" value={singleBetAmounts[h.horse_number] || ''} onChange={e=>setSingleBetAmounts({...singleBetAmounts, [h.horse_number]: e.target.value})} style={{ width: '100px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', textAlign: 'right' }} />
                               <button onClick={()=>addToCart(betType, h.horse_number.toString(), Number(singleBetAmounts[h.horse_number]))} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>追加</button>
                             </div>
                           </div>
@@ -323,7 +324,8 @@ export default function ProfessionalAomoriKeibaUser() {
                             </>
                           )}
                         </div>
-                        <div style={{ marginBottom: '20px', fontWeight: 'bold', color: '#1e40af' }}>金額: <input type="number" value={comboAmount} onChange={e=>setComboAmount(e.target.value)} style={{ width: '120px', padding: '8px', borderRadius: '8px', border: '1px solid #93c5fd', textAlign: 'right', fontSize: '16px' }} /> G</div>
+                        {/* ★ 最低100G〜 */}
+                        <div style={{ marginBottom: '20px', fontWeight: 'bold', color: '#1e40af' }}>金額: <input type="number" step="100" min="100" value={comboAmount} onChange={e=>setComboAmount(e.target.value)} style={{ width: '120px', padding: '8px', borderRadius: '8px', border: '1px solid #93c5fd', textAlign: 'right', fontSize: '16px' }} /> G</div>
                         <button onClick={() => {
                           const sel = isDouble ? `${horseSel1}-${horseSel2}` : `${horseSel1}-${horseSel2}-${horseSel3}`;
                           addToCart(betType, sel, Number(comboAmount));
@@ -359,7 +361,7 @@ export default function ProfessionalAomoriKeibaUser() {
                             <td style={{ padding: '12px', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>{b.races?.title}</td>
                             <td style={{ fontWeight: 'bold', color: '#2563eb' }}>{b.bet_type}</td>
                             <td style={{ fontWeight: 'bold' }}>{b.selection}</td>
-                            <td>{b.amount.toLocaleString()} G</td>
+                            <td style={{ fontWeight: 'bold' }}>{b.amount.toLocaleString()} G</td>
                             <td style={{ fontWeight: 'bold' }}>{b.is_claimed ? (b.payout_amount > 0 ? <span style={{ color: '#16a34a' }}>🎯 +{b.payout_amount.toLocaleString()} G</span> : <span style={{ color: '#94a3b8' }}>不的中</span>) : <span style={{ color: '#eab308' }}>⏳ 待ち</span>}</td>
                           </tr>
                         ))}
@@ -368,7 +370,6 @@ export default function ProfessionalAomoriKeibaUser() {
                   </div>
                 )}
 
-                {/* ==================== 💬 TAB: 問い合わせ (NEW) ==================== */}
                 {activeTab === 'inquiry' && (
                   <div>
                     <div style={{ backgroundColor: '#f8fafc', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
