@@ -60,7 +60,6 @@ export default function ProfessionalAomoriKeibaUser() {
   useEffect(() => { if (activeTab === 'ranking' && horses.length > 0) generateRanking(rankingType); }, [activeTab, rankingType, horses]);
   useEffect(() => { if (currentUser && activeTab === 'inquiry') fetchMyInquiries(); }, [activeTab, currentUser]);
 
-  // ★ 400エラーの原因となる結合クエリ（join）や未存在カラム順指定を排除した安全取得
   const fetchRaces = async () => { 
     const { data } = await supabase.from('races').select('*'); 
     if (data) setRaces([...data].sort((a, b) => (a.race_number || 0) - (b.race_number || 0))); 
@@ -72,7 +71,6 @@ export default function ProfessionalAomoriKeibaUser() {
   };
 
   const fetchMyHistory = async () => { 
-    // ★ リレーション（horses, races）での400エラーを防ぐため select('*') のみ指定
     const { data } = await supabase.from('bets').select('*').eq('user_id', currentUser.id); 
     if (data) setMyHistory([...data].reverse()); 
   };
@@ -86,7 +84,6 @@ export default function ProfessionalAomoriKeibaUser() {
     e.preventDefault();
     if (!discordInput || !pinInput) return alert('名前とPINコードを入力してください');
     
-    // ★ 400エラーを防ぐため maybeSingle や single を使わず全取得から find で参照
     const { data: users } = await supabase.from('users').select('*');
     const exUser = users?.find((u) => u.discord_name === discordInput);
 
@@ -153,28 +150,49 @@ export default function ProfessionalAomoriKeibaUser() {
     setRankingData(list.slice(0, 10));
   };
 
-  const addToCart = (type: string, selection: string, amount: number) => {
-    if (!selection || selection.includes('')) return alert('買い目を正しく選択してください');
+  // ★ カート追加処理の確実な数値判定ロジック
+  const addToCart = (type: string, selection: string, rawAmount: any) => {
+    if (!selection || selection.includes('undefined') || selection === '') {
+      return alert('買い目を正しく選択してください！');
+    }
     const selArr = selection.split('-');
-    if (new Set(selArr).size !== selArr.length) return alert('同じ馬が複数選択されています！');
-    if (!amount || amount < 100) return alert('最低購入金額は100Gからです！');
-    setCart([...cart, { type, selection, amount }]);
+    if (new Set(selArr).size !== selArr.length) {
+      return alert('同じ馬が複数選択されています！');
+    }
+    
+    // 数値への補正
+    const parsedAmount = Number(rawAmount);
+    if (isNaN(parsedAmount) || parsedAmount < 100) {
+      return alert('購入金額は100G以上を入力してください！');
+    }
+
+    setCart(prevCart => [...prevCart, { type, selection, amount: parsedAmount }]);
   };
 
   const removeFromCart = (index: number) => setCart(cart.filter((_, i) => i !== index));
 
   const executeCartBets = async () => {
+    if (!currentUser) return alert('ログインしてください！');
     const cartTotal = cart.reduce((sum, item) => sum + item.amount, 0);
-    if (currentUser.balance < cartTotal) return alert('所持金不足です');
-    if (currentRace.status === 'finished') return alert('このレースは受付終了しています');
+    if (currentUser.balance < cartTotal) return alert('所持金不足です！');
+    if (currentRace?.status === 'finished') return alert('このレースは受付終了しています！');
 
     for (const item of cart) {
-      await supabase.from('bets').insert([{ user_id: currentUser.id, race_id: currentRace.id, bet_type: item.type, selection: item.selection, amount: item.amount, claim_code: 'AOMORI' }]);
+      await supabase.from('bets').insert([{ 
+        user_id: currentUser.id, 
+        race_id: currentRace.id, 
+        bet_type: item.type, 
+        selection: item.selection, 
+        amount: item.amount, 
+        claim_code: 'AOMORI' 
+      }]);
     }
+
     const newBal = currentUser.balance - cartTotal;
     await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
     setCurrentUser({ ...currentUser, balance: newBal });
-    setCart([]); alert('✅ 投票が完了しました！健闘を祈ります！');
+    setCart([]); 
+    alert('✅ 投票が完了しました！健闘を祈ります！');
   };
 
   const isSingle = betType === '単勝' || betType === '複勝';
@@ -318,8 +336,21 @@ export default function ProfessionalAomoriKeibaUser() {
                           <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                             <span style={{ fontWeight: 'bold', fontSize: '16px' }}>{h.horse_number}番 {h.name} ({h.age || 3}歳) - 🏇 {h.jockey}</span>
                             <div style={{ display: 'flex', gap: '10px' }}>
-                              <input type="number" step="100" min="100" placeholder="100G〜" value={singleBetAmounts[h.horse_number] || ''} onChange={e=>setSingleBetAmounts({...singleBetAmounts, [h.horse_number]: e.target.value})} style={{ width: '100px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', textAlign: 'right' }} />
-                              <button onClick={()=>addToCart(betType, h.horse_number.toString(), Number(singleBetAmounts[h.horse_number]))} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>追加</button>
+                              <input 
+                                type="number" 
+                                step="100" 
+                                min="100" 
+                                placeholder="100G〜" 
+                                value={singleBetAmounts[h.horse_number] || ''} 
+                                onChange={e => setSingleBetAmounts({...singleBetAmounts, [h.horse_number]: e.target.value})} 
+                                style={{ width: '100px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', textAlign: 'right' }} 
+                              />
+                              <button 
+                                onClick={() => addToCart(betType, String(h.horse_number), singleBetAmounts[h.horse_number] || '100')} 
+                                style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                              >
+                                追加
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -340,11 +371,15 @@ export default function ProfessionalAomoriKeibaUser() {
                             </>
                           )}
                         </div>
-                        <div style={{ marginBottom: '20px', fontWeight: 'bold', color: '#1e40af' }}>金額: <input type="number" step="100" min="100" value={comboAmount} onChange={e=>setComboAmount(e.target.value)} style={{ width: '120px', padding: '8px', borderRadius: '8px', border: '1px solid #93c5fd', textAlign: 'right', fontSize: '16px' }} /> G</div>
+                        <div style={{ marginBottom: '20px', fontWeight: 'bold', color: '#1e40af' }}>
+                          金額: <input type="number" step="100" min="100" value={comboAmount} onChange={e=>setComboAmount(e.target.value)} style={{ width: '120px', padding: '8px', borderRadius: '8px', border: '1px solid #93c5fd', textAlign: 'right', fontSize: '16px' }} /> G
+                        </div>
                         <button onClick={() => {
                           const sel = isDouble ? `${horseSel1}-${horseSel2}` : `${horseSel1}-${horseSel2}-${horseSel3}`;
-                          addToCart(betType, sel, Number(comboAmount));
-                        }} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '14px 36px', borderRadius: '25px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>カートに追加 🛒</button>
+                          addToCart(betType, sel, comboAmount);
+                        }} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '14px 36px', borderRadius: '25px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
+                          カートに追加 🛒
+                        </button>
                       </div>
                     )}
                   </div>
@@ -387,6 +422,7 @@ export default function ProfessionalAomoriKeibaUser() {
                 )}
               </div>
 
+              {/* 発券カート */}
               <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 'fit-content' }}>
                 <div>
                   <h3 style={{ margin: '0 0 16px 0', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px', color: '#1e3a8a' }}>🛒 発券カート</h3>
