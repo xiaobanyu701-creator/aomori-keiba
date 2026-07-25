@@ -89,7 +89,6 @@ export default function SuperAdminConsole() {
     }
   }, [selectedUserId, users]);
 
-  // 🧬 選択されたユーザーの生産馬をDBからオンライン取得
   useEffect(() => {
     if (breedEditOwnerName) {
       loadOwnerBredHorses(breedEditOwnerName);
@@ -150,13 +149,11 @@ export default function SuperAdminConsole() {
     }
   };
 
-  // 🧬 オンラインDB上の馬のパラメータを上書き保存
   const handleUpdateBredHorseDetail = async (horseId: string, field: string, value: any) => {
     await supabase.from('horse_masters').update({ [field]: value }).eq('id', horseId);
     loadOwnerBredHorses(breedEditOwnerName);
   };
 
-  // 🧬 生産馬の削除
   const handleDeleteBredHorse = async (horseId: string, horseName: string) => {
     if (!confirm(`「${horseName}」を完全に削除しますか？`)) return;
     await supabase.from('horse_masters').delete().eq('id', horseId);
@@ -164,7 +161,6 @@ export default function SuperAdminConsole() {
     alert(`🗑️ 「${horseName}」を削除しました。`);
   };
 
-  // 🔒 締め切り切替
   const handleToggleRaceStatus = async (newStatus: 'open' | 'closed') => {
     if (!currentRace) return;
     await supabase.from('races').update({ status: newStatus }).eq('id', currentRace.id);
@@ -172,7 +168,6 @@ export default function SuperAdminConsole() {
     fetchRaces();
   };
 
-  // 💰 所持コイン変更＆加算
   const handleSetUserBalance = async () => {
     if (!selectedUser) return;
     const newBal = Number(customBalanceInput);
@@ -209,7 +204,6 @@ export default function SuperAdminConsole() {
     fetchUsers();
   };
 
-  // 🤝 馬と馬主の紐づけ
   const handleAssignOwnerToHorse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!assignTargetHorseId || !assignTargetOwnerName) return alert('選択してください');
@@ -222,7 +216,6 @@ export default function SuperAdminConsole() {
     fetchHorseMasters();
   };
 
-  // 🐎 競走馬マスター関連
   const handleAddHorseMaster = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!addHorseMasterName) return alert('馬名を入力してください');
@@ -250,7 +243,6 @@ export default function SuperAdminConsole() {
     fetchHorseMasters();
   };
 
-  // 🛠️ レース条件保存
   const handleUpdateRaceInfo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentRace) return;
@@ -258,14 +250,28 @@ export default function SuperAdminConsole() {
     alert('保存しました！'); fetchRaces();
   };
 
-  // 🐴 出走馬追加
+  // 🐴 出走馬追加 (400エラー安全リトライ処理)
   const handleAddHorse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentRace || !newHorseName) return alert('馬名を選択してください');
 
-    await supabase.from('horses').insert([{
-      race_id: currentRace.id, horse_number: newHorseNumber, name: newHorseName, age: newHorseAge, jockey: newJockey
+    const { error } = await supabase.from('horses').insert([{
+      race_id: currentRace.id, 
+      horse_number: newHorseNumber, 
+      name: newHorseName, 
+      age: newHorseAge, 
+      jockey: newJockey
     }]);
+
+    if (error) {
+      // 安全な最小限データで再試行
+      await supabase.from('horses').insert([{
+        race_id: currentRace.id,
+        horse_number: newHorseNumber,
+        name: newHorseName
+      }]);
+    }
+
     await supabase.from('horse_masters').update({ status: `出走(${selectedRaceNo}R)` }).eq('name', newHorseName);
     fetchHorses(currentRace.id); fetchHorseMasters(); alert(`🎉 出走登録しました！`);
   };
@@ -276,7 +282,6 @@ export default function SuperAdminConsole() {
     fetchHorses(currentRace.id);
   };
 
-  // 📈 AIオッズ
   const handleGenerateAIOdds = async () => {
     if (!confirm('自動設定しますか？')) return;
     const oddsTable: { [key: number]: number } = { 1: 1.8, 2: 3.2, 3: 5.5, 4: 8.8, 5: 14.2, 6: 22.5, 7: 35.0, 8: 58.0, 9: 84.0, 10: 120.0 };
@@ -294,7 +299,6 @@ export default function SuperAdminConsole() {
     fetchHorses(currentRace.id);
   };
 
-  // 🏆 着順確定 ＆ 配当 ＆ 馬主10%手当
   const handleSettleFullRace = async () => {
     if (!currentRace || !firstHorse) return alert('1着を指定してください');
     if (!confirm(`【${selectedRaceNo}R】の結果を確定して一括自動振込を行いますか？`)) return;

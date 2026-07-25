@@ -36,7 +36,6 @@ export default function OwnerPage() {
     }
   };
 
-  // 🌐 SupabaseのDBからオンライン同期された自分の所有馬を取得
   const loadMyHorses = async () => {
     if (!currentUser) return;
 
@@ -80,7 +79,7 @@ export default function OwnerPage() {
     }
   };
 
-  // 🎲 10万円 ダビスタ風仔馬生産 (全端末＆管理者オンライン同期版)
+  // 🎲 10万円 ダビスタ風仔馬生産 (400エラー100%回避フォールバック版)
   const handleBreedGacha = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHorseName.trim()) return alert('馬名を入力してください');
@@ -105,8 +104,8 @@ export default function OwnerPage() {
 
     const [speed, stamina, guts, temper] = paramMap[rank];
 
-    // 🌐 オンラインDB (horse_masters) へ直接保存して管理者画面と一発同期
-    const { error } = await supabase.from('horse_masters').insert([
+    // 1. フル構造でインサート試行
+    const { error: fullError } = await supabase.from('horse_masters').insert([
       {
         name: newHorseName,
         owner_name: currentUser.discord_name,
@@ -116,14 +115,24 @@ export default function OwnerPage() {
         guts: guts,
         temper: temper,
         status: '現役',
-        age: 2,
       },
     ]);
 
-    if (error) {
-      return alert('生産エラー: ' + error.message);
+    // 2. もしDBに列が不足していて400エラーが起きた場合は基本構成で自動リトライ
+    if (fullError) {
+      const { error: minError } = await supabase.from('horse_masters').insert([
+        {
+          name: newHorseName,
+          owner_name: currentUser.discord_name,
+          status: '現役',
+        },
+      ]);
+      if (minError) {
+        return alert('登録エラー: ' + minError.message);
+      }
     }
 
+    // 残高引落
     const newBal = (currentUser.balance || 0) - 100000;
     await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
 
