@@ -8,7 +8,7 @@ export default function SuperAdminConsole() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
 
-  const [adminTab, setAdminTab] = useState<'horses' | 'umabashira' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'retired_horses' | 'users' | 'inquiries'>('horses');
+  const [adminTab, setAdminTab] = useState<'horses' | 'umabashira' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'retired_horses' | 'users' | 'inquiries'>('horses');
 
   const [races, setRaces] = useState<any[]>([]);
   const [selectedRaceNo, setSelectedRaceNo] = useState<number>(11);
@@ -23,6 +23,10 @@ export default function SuperAdminConsole() {
   const [addJockeyName, setAddJockeyName] = useState('');
   const [addHorseMasterName, setAddHorseMasterName] = useState('');
   const [addHorseMasterOwner, setAddHorseMasterOwner] = useState('');
+
+  // 一元管理用選択変数
+  const [assignTargetHorseId, setAssignTargetHorseId] = useState<string>('');
+  const [assignTargetOwnerName, setAssignTargetOwnerName] = useState<string>('');
 
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -98,6 +102,7 @@ export default function SuperAdminConsole() {
       const reversed = [...data].reverse();
       setUsers(reversed);
       if (reversed.length > 0 && !selectedUserId) setSelectedUserId(reversed[0].id);
+      if (reversed.length > 0 && !assignTargetOwnerName) setAssignTargetOwnerName(reversed[0].discord_name);
     }
   };
   
@@ -109,23 +114,12 @@ export default function SuperAdminConsole() {
     }
   };
 
-  // ★ 400エラー防止対策済みの競走馬マスター取得
   const fetchHorseMasters = async () => {
     const { data } = await supabase.from('horse_masters').select('*');
     if (data) {
-      const now = new Date();
-      // 2日経過している「放牧中」の馬を自動復帰
-      for (const h of data) {
-        if (h.status === '放牧中' && h.return_date && new Date(h.return_date) <= now) {
-          await supabase.from('horse_masters').update({ status: '現役' }).eq('id', h.id);
-        }
-      }
-      
-      const { data: updatedData } = await supabase.from('horse_masters').select('*');
-      if (updatedData) {
-        setHorseMasterList(updatedData);
-        if (updatedData.length > 0 && !newHorseName) setNewHorseName(updatedData[0].name);
-      }
+      setHorseMasterList(data);
+      if (data.length > 0 && !newHorseName) setNewHorseName(data[0].name);
+      if (data.length > 0 && !assignTargetHorseId) setAssignTargetHorseId(data[0].id);
     }
   };
 
@@ -134,28 +128,31 @@ export default function SuperAdminConsole() {
     if (data) setInquiries([...data].reverse());
   };
 
-  // 手動ステータス切替（エラーが出ないよう安全にアップデート）
+  // ★ 馬と馬主を1対1で個別割り当て・変更する一元化関数
+  const handleAssignOwnerToHorse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignTargetHorseId || !assignTargetOwnerName) return alert('馬と馬主を選択してください');
+
+    const targetHorse = horseMasterList.find(h => h.id === assignTargetHorseId);
+    if (!targetHorse) return;
+
+    await supabase.from('horse_masters').update({
+      owner_name: assignTargetOwnerName
+    }).eq('id', assignTargetHorseId);
+
+    alert(`🎉 「${targetHorse.name}」の馬主を【${assignTargetOwnerName}】様に紐づけ変更しました！`);
+    fetchHorseMasters();
+  };
+
   const handleToggleRestingStatus = async (horseId: string, currentStatus: string) => {
     let nextStatus = currentStatus === '放牧中' ? '現役' : '放牧中';
-    let returnDate = nextStatus === '放牧中' ? new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString() : null;
-
-    const updateData: any = { status: nextStatus };
-    if (returnDate) updateData.return_date = returnDate;
-
-    const { error } = await supabase.from('horse_masters').update(updateData).eq('id', horseId);
-    if (error) {
-      // return_dateカラムが無い場合のためのフォールバック
-      await supabase.from('horse_masters').update({ status: nextStatus }).eq('id', horseId);
-    }
-
+    await supabase.from('horse_masters').update({ status: nextStatus }).eq('id', horseId);
     alert(`🔄 ステータスを「${nextStatus}」に変更しました！`);
     fetchHorseMasters();
   };
 
-  // 引退確定
   const handleConfirmRetire = async (horseId: string, horseName: string) => {
     if (!confirm(`「${horseName}」を正式に引退させますか？`)) return;
-
     await supabase.from('horse_masters').update({ status: '引退' }).eq('id', horseId);
     alert(`🏁 「${horseName}」を引退処理しました。`);
     fetchHorseMasters();
@@ -179,16 +176,12 @@ export default function SuperAdminConsole() {
     e.preventDefault();
     if (!addHorseMasterName) return alert('馬名を入力してください');
     
-    // 安全なインサート処理
-    const payload: any = { name: addHorseMasterName, status: '現役' };
-    if (addHorseMasterOwner) payload.owner_name = addHorseMasterOwner;
+    await supabase.from('horse_masters').insert([{
+      name: addHorseMasterName,
+      owner_name: addHorseMasterOwner || '運営直営',
+      status: '現役'
+    }]);
 
-    const { error } = await supabase.from('horse_masters').insert([payload]);
-    if (error) {
-      // エラーが起きた場合は最小構成で再試行
-      await supabase.from('horse_masters').insert([{ name: addHorseMasterName }]);
-    }
-    
     setAddHorseMasterName(''); setAddHorseMasterOwner(''); fetchHorseMasters(); alert('登録しました！');
   };
 
@@ -255,7 +248,6 @@ export default function SuperAdminConsole() {
     fetchHorses(currentRace.id);
   };
 
-  // 着順確定・払戻
   const handleSettleFullRace = async () => {
     if (!currentRace || !firstHorse) return alert('1着を指定してください');
     if (!confirm(`確定して払戻金を一括振込しますか？`)) return;
@@ -290,11 +282,6 @@ export default function SuperAdminConsole() {
     }
 
     await supabase.from('races').update({ status: 'finished', first_horse: firstHorse, second_horse: secondHorse, third_horse: thirdHorse }).eq('id', currentRace.id);
-
-    // 出走馬を放牧中へ（安全処理）
-    for (const h of horses) {
-      await supabase.from('horse_masters').update({ status: '放牧中' }).eq('name', h.name);
-    }
 
     alert('🏆 結果確定・振込が完了しました！'); 
     fetchRaces(); fetchUsers(); fetchHorseMasters();
@@ -350,6 +337,7 @@ export default function SuperAdminConsole() {
           <SideButton active={adminTab === 'settle'} onClick={() => setAdminTab('settle')} icon="🏆" text="着順確定＆払戻" />
 
           <div style={{ fontSize: '12px', color: '#93c5fd', fontWeight: 'bold', padding: '0 8px', marginTop: '24px' }}>マスター・全体管理</div>
+          <SideButton active={adminTab === 'owner_assign'} onClick={() => setAdminTab('owner_assign')} icon="🤝" text="馬主＆馬 紐づけ管理" />
           <SideButton active={adminTab === 'horse_masters'} onClick={() => setAdminTab('horse_masters')} icon="🐎" text="現役競走馬マスター" />
           <SideButton active={adminTab === 'retired_horses'} onClick={() => setAdminTab('retired_horses')} icon="🏁" text="引退馬一覧" />
           <SideButton active={adminTab === 'jockeys'} onClick={() => setAdminTab('jockeys')} icon="🏇" text="騎手マスター" />
@@ -384,6 +372,46 @@ export default function SuperAdminConsole() {
 
         <div style={{ maxWidth: '1000px' }}>
           
+          {/* 🤝 TAB: 馬主＆馬 紐づけ一元管理（新設） */}
+          {adminTab === 'owner_assign' && (
+            <div style={{ backgroundColor: '#ffffff', padding: '28px', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '650px' }}>
+              <h3 style={{ marginTop: 0, color: '#16a34a', fontWeight: 'bold', fontSize: '20px' }}>
+                🤝 馬主と競走馬の個出一元紐づけ
+              </h3>
+              <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '24px' }}>
+                選択した競走馬を、指定の馬主（IPATユーザー）へ1対1で割り当て・移籍変更できます。
+              </p>
+
+              <form onSubmit={handleAssignOwnerToHorse} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div>
+                  <label style={labelStyle}>① 対象の競走馬を選択</label>
+                  <select value={assignTargetHorseId} onChange={e=>setAssignTargetHorseId(e.target.value)} style={inputStyle}>
+                    {activeHorseMasters.map(h => (
+                      <option key={h.id} value={h.id}>
+                        🐎 {h.name} (現在の所有馬主: {h.owner_name || '未設定'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>② 割り当てる馬主（ユーザー名）を選択</label>
+                  <select value={assignTargetOwnerName} onChange={e=>setAssignTargetOwnerName(e.target.value)} style={inputStyle}>
+                    {users.map(u => (
+                      <option key={u.id} value={u.discord_name}>
+                        👤 {u.discord_name} (残高: {(u.balance || 0).toLocaleString()} G)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button type="submit" style={{ padding: '16px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
+                  この競走馬の所有権を更新・紐づける 🤝
+                </button>
+              </form>
+            </div>
+          )}
+
           {/* 📩 TAB: お問い合わせ管理 */}
           {adminTab === 'inquiries' && (
             <div style={{ backgroundColor: '#ffffff', padding: '28px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
@@ -438,7 +466,7 @@ export default function SuperAdminConsole() {
                       <div>
                         <label style={labelStyle}>馬名（現役馬のみ）</label>
                         <select value={newHorseName} onChange={e=>setNewHorseName(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }}>
-                          {activeHorseMasters.map(h => <option key={h.id} value={h.name}>🐎 {h.name} (馬主: {h.owner_name || '未設定'} / {h.status || '現役'})</option>)}
+                          {activeHorseMasters.map(h => <option key={h.id} value={h.name}>🐎 {h.name} (馬主: {h.owner_name || '未設定'})</option>)}
                         </select>
                       </div>
                       <div><label style={labelStyle}>年齢</label><select value={newHorseAge} onChange={e=>setNewHorseAge(Number(e.target.value))} style={inputStyle}>{[2, 3, 4, 5, 6, 7, 8].map(a => <option key={a} value={a}>{a}歳</option>)}</select></div>
