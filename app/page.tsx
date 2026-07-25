@@ -52,18 +52,17 @@ export default function IPATPage() {
   // 🌐 Supabase(オンライン)から全端末共通の動的オッズをリアルタイム計算
   const fetchHorsesAndOnlineOdds = async (raceId: string) => {
     const { data: hData } = await supabase.from('horses').select('*').eq('race_id', raceId);
-    const { data: bData } = await supabase.from('bets').select('*').eq('race_id', raceId);
+    const { data: bData } = await supabase.from('bets').select('*').eq('race_id', String(raceId));
 
     if (hData) {
       const sorted = [...hData].sort((a, b) => (a.horse_number || 0) - (b.horse_number || 0));
-
-      const totalAmount = bData ? bData.reduce((sum, b) => sum + (b.amount || 0), 0) : 0;
+      const totalAmount = bData ? bData.reduce((sum, b) => sum + Number(b.amount || 0), 0) : 0;
 
       const dynamicHorses = sorted.map((h) => {
         let calculatedOdds = Number(h.manual_odds || 5.0);
         if (totalAmount > 0 && bData) {
           const horseBets = bData.filter((b) => b.bet_type === '単勝' && String(b.selection) === String(h.horse_number));
-          const horseTotal = horseBets.reduce((sum, b) => sum + (b.amount || 0), 0);
+          const horseTotal = horseBets.reduce((sum, b) => sum + Number(b.amount || 0), 0);
 
           if (horseTotal > 0) {
             const pool = totalAmount * 0.8; // 控除率20%
@@ -85,7 +84,7 @@ export default function IPATPage() {
 
   const fetchMyBets = async () => {
     if (!currentUser || !currentRace) return;
-    const { data } = await supabase.from('bets').select('*').eq('user_id', currentUser.id);
+    const { data } = await supabase.from('bets').select('*').eq('user_id', String(currentUser.id));
     if (data) setMyBets([...data].reverse());
   };
 
@@ -116,7 +115,7 @@ export default function IPATPage() {
     }
   };
 
-  // 🎫 馬券購入処理
+  // 🎫 馬券購入処理（型不一致ゼロ化・完全安全版）
   const handleBuyBet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return alert('ログインしてください');
@@ -139,11 +138,11 @@ export default function IPATPage() {
 
     const { error } = await supabase.from('bets').insert([
       {
-        user_id: currentUser.id,
-        race_id: currentRace.id,
-        bet_type: betType,
-        selection: selection,
-        amount: betAmount,
+        user_id: String(currentUser.id),
+        race_id: String(currentRace.id),
+        bet_type: String(betType),
+        selection: String(selection),
+        amount: Number(betAmount),
       },
     ]);
 
@@ -404,7 +403,7 @@ export default function IPATPage() {
                             🎫 【{b.bet_type}】 {b.selection}
                           </div>
                           <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                            購入額: {b.amount.toLocaleString()} G
+                            購入額: {Number(b.amount).toLocaleString()} G
                           </div>
                         </div>
 
