@@ -9,13 +9,14 @@ export default function IPATPage() {
   const [discordInput, setDiscordInput] = useState('');
   const [pinInput, setPinInput] = useState('');
 
-  const [mainTab, setMainTab] = useState<'bet' | 'history'>('bet');
+  const [mainTab, setMainTab] = useState<'bet' | 'history' | 'news'>('bet');
 
   const [races, setRaces] = useState<any[]>([]);
   const [selectedRaceNo, setSelectedRaceNo] = useState<number>(1);
   const [currentRace, setCurrentRace] = useState<any>(null);
   const [horses, setHorses] = useState<any[]>([]);
   const [myBets, setMyBets] = useState<any[]>([]);
+  const [newsList, setNewsList] = useState<any[]>([]);
 
   // 投票用
   const [betType, setBetType] = useState('単勝');
@@ -26,6 +27,7 @@ export default function IPATPage() {
 
   useEffect(() => {
     fetchRaces();
+    fetchNews();
   }, []);
 
   useEffect(() => {
@@ -47,6 +49,16 @@ export default function IPATPage() {
   const fetchRaces = async () => {
     const { data } = await supabase.from('races').select('*');
     if (data) setRaces([...data].sort((a, b) => (a.race_number || 0) - (b.race_number || 0)));
+  };
+
+  const fetchNews = async () => {
+    const { data } = await supabase.from('news').select('*');
+    if (data) {
+      setNewsList([...data].reverse());
+    } else {
+      const local = JSON.parse(localStorage.getItem('app_news_list') || '[]');
+      setNewsList(local);
+    }
   };
 
   const fetchHorsesAndOnlineOdds = async (raceId: string) => {
@@ -244,6 +256,7 @@ export default function IPATPage() {
             <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px' }}>
               <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text={isFinished ? '🏁 レース確定結果・払戻金' : '🎫 馬券投票（オッズ自動連動）'} />
               <TabBtn active={mainTab === 'history'} onClick={() => setMainTab('history')} text={`📋 馬券購入履歴 (${myBets.length}件)`} />
+              <TabBtn active={mainTab === 'news'} onClick={() => setMainTab('news')} text={`📢 アプデ・お知らせ (${newsList.length}件)`} />
             </div>
 
             {mainTab === 'bet' && (
@@ -541,6 +554,33 @@ export default function IPATPage() {
                 )}
               </div>
             )}
+
+            {/* 📢 アプデ・お知らせ一覧（【修正箇所】whiteSpaceを大文字に修正完了） */}
+            {mainTab === 'news' && (
+              <div>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>📢 運営からのアプデ・お知らせ一覧</h3>
+                {newsList.length === 0 ? (
+                  <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                    現在お知らせはありません。
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {newsList.map((n) => (
+                      <div key={n.id} style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#1e3a8a' }}>📢 {n.title}</span>
+                          <span style={{ fontSize: '12px', color: '#64748b' }}>{n.date || '本日'}</span>
+                        </div>
+                        <div style={{ fontSize: '14px', color: '#334155', whiteSpace: 'pre-wrap', lineHeight: '1.6', marginTop: '8px' }}>
+                          {n.content}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
         )}
       </div>

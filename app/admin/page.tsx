@@ -8,7 +8,7 @@ export default function SuperAdminConsole() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
 
-  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit'>('users');
+  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit' | 'news_edit'>('users');
 
   const [races, setRaces] = useState<any[]>([]);
   const [selectedRaceNo, setSelectedRaceNo] = useState<number>(1);
@@ -37,6 +37,11 @@ export default function SuperAdminConsole() {
   const [breedEditOwnerName, setBreedEditOwnerName] = useState<string>('');
   const [userBredHorses, setUserBredHorses] = useState<any[]>([]);
 
+  // 📢 アプデ・お知らせ管理用ステート
+  const [newsTitle, setNewsTitle] = useState('');
+  const [newsContent, setNewsContent] = useState('');
+  const [newsList, setNewsList] = useState<any[]>([]);
+
   // レース設定用
   const [editTitle, setEditTitle] = useState('');
   const [editDistance, setEditDistance] = useState(1600);
@@ -63,7 +68,7 @@ export default function SuperAdminConsole() {
 
   useEffect(() => { 
     if (isAuthenticated) { 
-      fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters();
+      fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters(); fetchNews();
     } 
   }, [isAuthenticated]);
 
@@ -153,6 +158,48 @@ export default function SuperAdminConsole() {
       if (data.length > 0 && !newHorseName) setNewHorseName(data[0].name);
       if (data.length > 0 && !assignTargetHorseId) setAssignTargetHorseId(data[0].id);
     }
+  };
+
+  const fetchNews = async () => {
+    const { data } = await supabase.from('news').select('*');
+    if (data) {
+      setNewsList([...data].reverse());
+    } else {
+      const local = JSON.parse(localStorage.getItem('app_news_list') || '[]');
+      setNewsList(local);
+    }
+  };
+
+  // 📢 アプデお知らせ投函
+  const handleAddNews = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newsTitle || !newsContent) return alert('タイトルと本文を入力してください');
+
+    const newNews = {
+      title: newsTitle,
+      content: newsContent,
+      date: new Date().toLocaleDateString(),
+    };
+
+    const { error } = await supabase.from('news').insert([newNews]);
+
+    // DBフォールバック保存
+    const local = JSON.parse(localStorage.getItem('app_news_list') || '[]');
+    localStorage.setItem('app_news_list', JSON.stringify([{ id: Date.now().toString(), ...newNews }, ...local]));
+
+    setNewsTitle('');
+    setNewsContent('');
+    alert('📢 アプデ・お知らせを配信しました！');
+    fetchNews();
+  };
+
+  const handleDeleteNews = async (id: string) => {
+    if (!confirm('削除しますか？')) return;
+    await supabase.from('news').delete().eq('id', id);
+    const local = JSON.parse(localStorage.getItem('app_news_list') || '[]');
+    const filtered = local.filter((n: any) => n.id !== id);
+    localStorage.setItem('app_news_list', JSON.stringify(filtered));
+    fetchNews();
   };
 
   const handleUpdateBredHorseDetail = async (horseId: string, field: string, value: any) => {
@@ -303,7 +350,6 @@ export default function SuperAdminConsole() {
     fetchHorses(currentRace.id);
   };
 
-  // 🏆 着順確定・自動振込＆手当還元＆1〜9着全保存
   const handleSettleFullRace = async () => {
     if (!currentRace || !rank1) return alert('最低限1着の馬を選択してください');
     if (!confirm(`【${selectedRaceNo}R】の結果を確定し、的中者全員へ配当金を自動振込（残高加算）しますか？`)) return;
@@ -425,6 +471,7 @@ export default function SuperAdminConsole() {
           <div style={{ fontSize: '12px', color: '#93c5fd', fontWeight: 'bold', padding: '0 8px', marginTop: '8px' }}>マスター・全体管理</div>
           <SideButton active={adminTab === 'users'} onClick={() => setAdminTab('users')} icon="👤" text="プレイヤー管理 (お金/削除)" />
           <SideButton active={adminTab === 'breed_edit'} onClick={() => setAdminTab('breed_edit')} icon="🧬" text="生産馬 個別確認・編集" />
+          <SideButton active={adminTab === 'news_edit'} onClick={() => setAdminTab('news_edit')} icon="📢" text="アプデ・お知らせ配信" />
           <SideButton active={adminTab === 'owner_assign'} onClick={() => setAdminTab('owner_assign')} icon="🤝" text="馬主＆馬 紐づけ管理" />
           <SideButton active={adminTab === 'horse_masters'} onClick={() => setAdminTab('horse_masters')} icon="🐎" text="現役競走馬マスター" />
 
@@ -461,6 +508,50 @@ export default function SuperAdminConsole() {
         )}
 
         <div style={{ maxWidth: '1000px' }}>
+
+          {/* 📢 TAB: 新設 アプデ・お知らせ配信 */}
+          {adminTab === 'news_edit' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0', maxWidth: '650px' }}>
+                <h2 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '20px', fontWeight: 'bold' }}>
+                  📢 アプデ・お知らせ新規配信
+                </h2>
+
+                <form onSubmit={handleAddNews} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>タイトル</label>
+                    <input type="text" placeholder="例: 【アップデート】新機能が追加されました！" value={newsTitle} onChange={e=>setNewsTitle(e.target.value)} style={inputStyle} required />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>本文</label>
+                    <textarea rows={5} placeholder="アップデート詳細やイベント情報を入力" value={newsContent} onChange={e=>setNewsContent(e.target.value)} style={{ ...inputStyle, resize: 'vertical' }} required />
+                  </div>
+                  <button type="submit" style={{ padding: '14px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
+                    📢 全プレイヤーにお知らせを配信する
+                  </button>
+                </form>
+              </div>
+
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>
+                  📋 配信中のお知らせ一覧 ({newsList.length}件)
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {newsList.map(n => (
+                    <div key={n.id} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#1e3a8a' }}>📢 {n.title}</div>
+                        <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>{n.date}</div>
+                      </div>
+                      <button onClick={()=>handleDeleteNews(n.id)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
+                        削除
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 🏆 TAB: 着順確定（1〜9着指定） */}
           {adminTab === 'settle' && (
