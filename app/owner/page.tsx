@@ -29,26 +29,37 @@ export default function OwnerPage() {
   }, [currentUser]);
 
   const fetchJockeys = async () => {
-    const { data } = await supabase.from('jockeys').select('*');
-    if (data && data.length > 0) {
-      setJockeyList(data);
-      setSelectedJockey(data[0].name);
+    try {
+      const { data } = await supabase.from('jockeys').select('*');
+      if (data && data.length > 0) {
+        setJockeyList(data);
+        setSelectedJockey(data[0].name);
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
   const loadMyHorses = async () => {
     if (!currentUser) return;
+    try {
+      const { data, error } = await supabase
+        .from('horse_masters')
+        .select('*')
+        .eq('owner_name', currentUser.discord_name);
 
-    const { data } = await supabase
-      .from('horse_masters')
-      .select('*')
-      .eq('owner_name', currentUser.discord_name);
-
-    if (data) {
-      setMyHorses([...data].reverse());
-      if (data.length > 0 && !selectedHorseName) {
-        setSelectedHorseName(data[0].name);
+      if (data && !error) {
+        setMyHorses([...data].reverse());
+        if (data.length > 0 && !selectedHorseName) {
+          setSelectedHorseName(data[0].name);
+        }
+      } else {
+        // DB未作成時のローカルフォールバック
+        const local = JSON.parse(localStorage.getItem(`my_2yo_horses_${currentUser.discord_name}`) || '[]');
+        setMyHorses(local);
       }
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -79,7 +90,7 @@ export default function OwnerPage() {
     }
   };
 
-  // 🎲 10万円 ダビスタ風仔馬生産 (400エラー100%回避フォールバック版)
+  // 🎲 10万円 ダビスタ風仔馬生産
   const handleBreedGacha = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHorseName.trim()) return alert('馬名を入力してください');
@@ -104,8 +115,8 @@ export default function OwnerPage() {
 
     const [speed, stamina, guts, temper] = paramMap[rank];
 
-    // 1. フル構造でインサート試行
-    const { error: fullError } = await supabase.from('horse_masters').insert([
+    // DBへのインサート試行
+    const { error } = await supabase.from('horse_masters').insert([
       {
         name: newHorseName,
         owner_name: currentUser.discord_name,
@@ -118,19 +129,11 @@ export default function OwnerPage() {
       },
     ]);
 
-    // 2. もしDBに列が不足していて400エラーが起きた場合は基本構成で自動リトライ
-    if (fullError) {
-      const { error: minError } = await supabase.from('horse_masters').insert([
-        {
-          name: newHorseName,
-          owner_name: currentUser.discord_name,
-          status: '現役',
-        },
-      ]);
-      if (minError) {
-        return alert('登録エラー: ' + minError.message);
-      }
-    }
+    // DBエラー時の安全バックアップ保存
+    const newHorseObj = { id: Date.now().toString(), name: newHorseName, owner_name: currentUser.discord_name, rank, speed, stamina, guts, temper, status: '現役' };
+    const localKey = `my_2yo_horses_${currentUser.discord_name}`;
+    const currentLoc = JSON.parse(localStorage.getItem(localKey) || '[]');
+    localStorage.setItem(localKey, JSON.stringify([newHorseObj, ...currentLoc]));
 
     // 残高引落
     const newBal = (currentUser.balance || 0) - 100000;
@@ -145,7 +148,6 @@ export default function OwnerPage() {
 
   const handleRetireRequest = async (horseId: string, horseName: string) => {
     if (!confirm(`「${horseName}」の引退を管理者に申請しますか？`)) return;
-
     await supabase.from('horse_masters').update({ status: '引退申請中' }).eq('id', horseId);
     alert(`📨 「${horseName}」の引退申請を送信しました！`);
     loadMyHorses();
@@ -248,13 +250,13 @@ export default function OwnerPage() {
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-                    {myHorses.map((h) => {
+                    {myHorses.map((h, i) => {
                       const isRetired = h.status === '引退';
                       const isPendingRetire = h.status === '引退申請中';
                       const isRunning = h.status?.includes('出走');
 
                       return (
-                        <div key={h.id} style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                        <div key={h.id || i} style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                             <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#16a34a' }}>🐎 {h.name}</span>
                             <span style={{ fontSize: '11px', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px', color: '#fff', backgroundColor: isRetired ? '#64748b' : isPendingRetire ? '#eab308' : isRunning ? '#dc2626' : '#16a34a' }}>
@@ -268,7 +270,7 @@ export default function OwnerPage() {
                             <div>スピード: {h.speed || 'B'} / スタミナ: {h.stamina || 'B'} / 根性: {h.guts || 'B'}</div>
                           </div>
 
-                          {!isRetired && !isPendingRetire && (
+                          {!isRetired && !isPendingRetire && h.id && (
                             <button
                               onClick={() => handleRetireRequest(h.id, h.name)}
                               style={{ marginTop: '12px', width: '100%', backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
@@ -314,8 +316,8 @@ export default function OwnerPage() {
                   <div>
                     <label style={labelStyle}>愛馬を選択</label>
                     <select value={selectedHorseName} onChange={(e) => setSelectedHorseName(e.target.value)} style={inputStyle}>
-                      {myHorses.map((h) => (
-                        <option key={h.id} value={h.name}>
+                      {myHorses.map((h, i) => (
+                        <option key={h.id || i} value={h.name}>
                           🐎 {h.name}
                         </option>
                       ))}
