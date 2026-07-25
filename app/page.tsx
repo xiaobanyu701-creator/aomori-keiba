@@ -12,7 +12,7 @@ export default function IPATPage() {
   const [mainTab, setMainTab] = useState<'bet' | 'history'>('bet');
 
   const [races, setRaces] = useState<any[]>([]);
-  const [selectedRaceNo, setSelectedRaceNo] = useState<number>(11);
+  const [selectedRaceNo, setSelectedRaceNo] = useState<number>(1);
   const [currentRace, setCurrentRace] = useState<any>(null);
   const [horses, setHorses] = useState<any[]>([]);
   const [myBets, setMyBets] = useState<any[]>([]);
@@ -33,39 +33,38 @@ export default function IPATPage() {
       const race = races.find((r) => r.race_number === selectedRaceNo);
       if (race) {
         setCurrentRace(race);
-        fetchHorsesAndDynamicOdds(race.id);
+        fetchHorsesAndOnlineOdds(race.id);
       }
     }
   }, [selectedRaceNo, races]);
 
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && currentRace) {
       fetchMyBets();
     }
-  }, [currentUser, selectedRaceNo]);
+  }, [currentUser, currentRace]);
 
   const fetchRaces = async () => {
     const { data } = await supabase.from('races').select('*');
     if (data) setRaces([...data].sort((a, b) => (a.race_number || 0) - (b.race_number || 0)));
   };
 
-  // 🎯 動的オッズ変動ロジック付きの出走馬取得
-  const fetchHorsesAndDynamicOdds = async (raceId: string) => {
+  // 🌐 Supabase(オンライン)から全端末共通の動的オッズをリアルタイム計算
+  const fetchHorsesAndOnlineOdds = async (raceId: string) => {
     const { data: hData } = await supabase.from('horses').select('*').eq('race_id', raceId);
+    const { data: bData } = await supabase.from('bets').select('*').eq('race_id', raceId);
 
     if (hData) {
       const sorted = [...hData].sort((a, b) => (a.horse_number || 0) - (b.horse_number || 0));
 
-      // 端末に保存された購入履歴からオッズを動的計算
-      const allLocalBets = JSON.parse(localStorage.getItem('all_user_bets') || '[]');
-      const raceBets = allLocalBets.filter((b: any) => String(b.race_id) === String(raceId));
-      const totalAmount = raceBets.reduce((sum: number, b: any) => sum + (b.amount || 0), 0);
+      // Supabaseの全ユーザーの購入データを合算
+      const totalAmount = bData ? bData.reduce((sum, b) => sum + (b.amount || 0), 0) : 0;
 
       const dynamicHorses = sorted.map((h) => {
         let calculatedOdds = Number(h.manual_odds || 5.0);
-        if (totalAmount > 0) {
-          const horseBets = raceBets.filter((b: any) => b.bet_type === '単勝' && String(b.selection) === String(h.horse_number));
-          const horseTotal = horseBets.reduce((sum: number, b: any) => sum + (b.amount || 0), 0);
+        if (totalAmount > 0 && bData) {
+          const horseBets = bData.filter((b) => b.bet_type === '単勝' && String(b.selection) === String(h.horse_number));
+          const horseTotal = horseBets.reduce((sum, b) => sum + (b.amount || 0), 0);
 
           if (horseTotal > 0) {
             const pool = totalAmount * 0.8; // 控除率20%
@@ -85,12 +84,10 @@ export default function IPATPage() {
     }
   };
 
-  // 🔒 自分の購入履歴を読み込み
-  const fetchMyBets = () => {
-    if (!currentUser) return;
-    const storageKey = `my_bets_${currentUser.discord_name}`;
-    const savedBets = JSON.parse(localStorage.getItem(storageKey) || '[]');
-    setMyBets(savedBets);
+  const fetchMyBets = async () => {
+    if (!currentUser || !currentRace) return;
+    const { data } = await supabase.from('bets').select('*').eq('user_id', currentUser.id);
+    if (data) setMyBets([...data].reverse());
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -120,7 +117,7 @@ export default function IPATPage() {
     }
   };
 
-  // 🎫 馬券購入処理（エラー100%回避の完全安全実装）
+  // 🎫 馬券購入処理（全端末完全同期オンライン保存）
   const handleBuyBet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return alert('ログインしてください');
@@ -141,35 +138,29 @@ export default function IPATPage() {
       selection = `${selectedHorse1}-${selectedHorse2}-${selectedHorse3}`;
     }
 
-    const newBet = {
-      id: Date.now().toString(),
-      user_id: currentUser.id,
-      race_id: currentRace.id,
-      race_number: currentRace.race_number,
-      bet_type: betType,
-      selection: selection,
-      amount: betAmount,
-      created_at: new Date().toLocaleTimeString(),
-      status: 'pending'
-    };
+    // 🌐 Supabaseへ直接保存して全端末でオッズを同期
+    const { error } = await supabase.from('bets').insert([
+      {
+        user_id: currentUser.id,
+        race_id: currentRace.id,
+        bet_type: betType,
+        selection: selection,
+        amount: betAmount,
+      },
+    ]);
 
-    // 🔒 1. 自分の購入履歴へ安全保存
-    const myStorageKey = `my_bets_${currentUser.discord_name}`;
-    const myCurrentBets = JSON.parse(localStorage.getItem(myStorageKey) || '[]');
-    localStorage.setItem(myStorageKey, JSON.stringify([newBet, ...myCurrentBets]));
+    if (error) {
+      return alert('購入エラー: ' + error.message);
+    }
 
-    // 🔒 2. 全体オッズ動的変動用プールへ保存
-    const allBets = JSON.parse(localStorage.getItem('all_user_bets') || '[]');
-    localStorage.setItem('all_user_bets', JSON.stringify([newBet, ...allBets]));
-
-    // 3. 残高の引き落とし（IPAT/馬主完全連携）
+    // 残高減額
     const newBal = (currentUser.balance || 0) - betAmount;
     await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
 
     setCurrentUser({ ...currentUser, balance: newBal });
     alert(`🎫 【${currentRace.race_number}R】${betType} (${selection}) を ${betAmount.toLocaleString()} G で購入しました！`);
     fetchMyBets();
-    fetchHorsesAndDynamicOdds(currentRace.id);
+    fetchHorsesAndOnlineOdds(currentRace.id);
   };
 
   return (
@@ -237,7 +228,7 @@ export default function IPATPage() {
         ) : (
           <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px' }}>
-              <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text="🎫 馬券投票（オッズ自動連動）" />
+              <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text="🎫 馬券投票（オッズ全端末同期）" />
               <TabBtn active={mainTab === 'history'} onClick={() => setMainTab('history')} text={`📋 馬券購入履歴 (${myBets.length}件)`} />
             </div>
 
@@ -298,7 +289,7 @@ export default function IPATPage() {
                     <div>
                       <label style={labelStyle}>券種を選択</label>
                       <select value={betType} onChange={(e) => setBetType(e.target.value)} style={inputStyle}>
-                        {['単勝', '複勝', '馬単', '馬連', 'ワイド', '3連複', '3連単'].map((t) => (
+                        {['単勝', '複勝', '馬単', '馬連', 'ワイド', '3連複', '3连単'].map((t) => (
                           <option key={t} value={t}>
                             {t}
                           </option>
@@ -368,7 +359,7 @@ export default function IPATPage() {
                   </div>
                 </form>
 
-                <h3 style={{ margin: '0 0 12px 0', color: '#1e3a8a' }}>📊 出走馬一覧 ＆ リアルタイムオッズ (人気自動変動中)</h3>
+                <h3 style={{ margin: '0 0 12px 0', color: '#1e3a8a' }}>📊 出走馬一覧 ＆ リアルタイムオッズ (全端末自動同期中)</h3>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                   <thead>
                     <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0', color: '#475569', textAlign: 'left' }}>
@@ -413,10 +404,10 @@ export default function IPATPage() {
                       <div key={b.id} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                           <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#1e3a8a' }}>
-                            【{b.race_number || '11'}R】 🎫 【{b.bet_type}】 {b.selection}
+                            🎫 【{b.bet_type}】 {b.selection}
                           </div>
                           <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                            購入額: {b.amount.toLocaleString()} G / 発行時刻: {b.created_at}
+                            購入額: {b.amount.toLocaleString()} G
                           </div>
                         </div>
 
