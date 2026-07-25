@@ -8,7 +8,7 @@ export default function SuperAdminConsole() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
 
-  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'stats' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users'>('users');
+  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'stats' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit'>('users');
 
   const [races, setRaces] = useState<any[]>([]);
   const [selectedRaceNo, setSelectedRaceNo] = useState<number>(1);
@@ -26,12 +26,16 @@ export default function SuperAdminConsole() {
   const [assignTargetHorseId, setAssignTargetHorseId] = useState<string>('');
   const [assignTargetOwnerName, setAssignTargetOwnerName] = useState<string>('');
 
-  // 👤 プレイヤー管理用ステート
+  // 👤 プレイヤー管理用
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [customBalanceInput, setCustomBalanceInput] = useState<string>('');
   const [amountToAddInput, setAmountToAddInput] = useState<number>(1000000);
   const [customPinInput, setCustomPinInput] = useState<string>('');
+
+  // 🧬 生産馬個別確認・編集用ステート
+  const [breedEditOwnerName, setBreedEditOwnerName] = useState<string>('');
+  const [userBredHorses, setUserBredHorses] = useState<any[]>([]);
 
   // レース設定用
   const [editTitle, setEditTitle] = useState('');
@@ -95,6 +99,19 @@ export default function SuperAdminConsole() {
     }
   }, [selectedUserId, users]);
 
+  // 🧬 選択されたユーザーの生産馬をロード
+  useEffect(() => {
+    if (breedEditOwnerName) {
+      loadOwnerBredHorses(breedEditOwnerName);
+    }
+  }, [breedEditOwnerName]);
+
+  const loadOwnerBredHorses = (ownerName: string) => {
+    const storageKey = `my_2yo_horses_${ownerName}`;
+    const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    setUserBredHorses(saved);
+  };
+
   const fetchRaces = async () => {
     const { data } = await supabase.from('races').select('*');
     if (data) setRaces([...data].sort((a, b) => (a.race_number || 0) - (b.race_number || 0)));
@@ -114,8 +131,11 @@ export default function SuperAdminConsole() {
     if (data) {
       const reversed = [...data].reverse();
       setUsers(reversed);
-      if (reversed.length > 0 && !selectedUserId) setSelectedUserId(reversed[0].id);
-      if (reversed.length > 0 && !assignTargetOwnerName) setAssignTargetOwnerName(reversed[0].discord_name);
+      if (reversed.length > 0) {
+        if (!selectedUserId) setSelectedUserId(reversed[0].id);
+        if (!assignTargetOwnerName) setAssignTargetOwnerName(reversed[0].discord_name);
+        if (!breedEditOwnerName) setBreedEditOwnerName(reversed[0].discord_name);
+      }
     }
   };
   
@@ -134,6 +154,29 @@ export default function SuperAdminConsole() {
       if (data.length > 0 && !newHorseName) setNewHorseName(data[0].name);
       if (data.length > 0 && !assignTargetHorseId) setAssignTargetHorseId(data[0].id);
     }
+  };
+
+  // 🧬 生産馬パラメータの保存・変更
+  const handleUpdateBredHorseDetail = (horseId: string, field: string, value: any) => {
+    const updated = userBredHorses.map(h => {
+      if (h.id === horseId) {
+        return { ...h, [field]: value };
+      }
+      return h;
+    });
+    setUserBredHorses(updated);
+    const storageKey = `my_2yo_horses_${breedEditOwnerName}`;
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+  };
+
+  // 🧬 生産馬の削除
+  const handleDeleteBredHorse = (horseId: string, horseName: string) => {
+    if (!confirm(`「${horseName}」をこの馬主の生産所有リストから削除しますか？`)) return;
+    const updated = userBredHorses.filter(h => h.id !== horseId);
+    setUserBredHorses(updated);
+    const storageKey = `my_2yo_horses_${breedEditOwnerName}`;
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+    alert(`🗑️ 「${horseName}」を削除しました。`);
   };
 
   // 🔒 締め切り切替
@@ -271,7 +314,6 @@ export default function SuperAdminConsole() {
     if (!currentRace || !firstHorse) return alert('1着を指定してください');
     if (!confirm(`【${selectedRaceNo}R】の結果を確定して一括自動振込を行いますか？`)) return;
 
-    // 1着馬主特定＆10%手当支給
     const winningHorseObj = horses.find(h => String(h.horse_number) === String(firstHorse));
     if (winningHorseObj) {
       const { data: masterHorse } = await supabase.from('horse_masters').select('*').eq('name', winningHorseObj.name);
@@ -344,6 +386,7 @@ export default function SuperAdminConsole() {
         <div style={{ display: 'flex', flexDirection: 'column', padding: '16px 8px', gap: '8px', flex: 1 }}>
           <div style={{ fontSize: '12px', color: '#93c5fd', fontWeight: 'bold', padding: '0 8px', marginTop: '8px' }}>マスター・全体管理</div>
           <SideButton active={adminTab === 'users'} onClick={() => setAdminTab('users')} icon="👤" text="プレイヤー管理 (お金/削除)" />
+          <SideButton active={adminTab === 'breed_edit'} onClick={() => setAdminTab('breed_edit')} icon="🧬" text="生産馬 個別確認・編集" />
           <SideButton active={adminTab === 'owner_assign'} onClick={() => setAdminTab('owner_assign')} icon="🤝" text="馬主＆馬 紐づけ管理" />
           <SideButton active={adminTab === 'horse_masters'} onClick={() => setAdminTab('horse_masters')} icon="🐎" text="現役競走馬マスター" />
           <SideButton active={adminTab === 'stats'} onClick={() => setAdminTab('stats')} icon="📊" text="売上・インフレ率グラフ" />
@@ -381,7 +424,94 @@ export default function SuperAdminConsole() {
         )}
 
         <div style={{ maxWidth: '1000px' }}>
-          
+
+          {/* 🧬 TAB: 生産馬 個別確認・編集（新設） */}
+          {adminTab === 'breed_edit' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
+              <h2 style={{ margin: '0 0 16px 0', color: '#16a34a', fontSize: '20px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                🧬 ユーザー別 生産馬一覧 ＆ パラメータ直接編集
+              </h2>
+              <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '24px' }}>
+                馬主（ユーザー）を選択して、そのプレイヤーがガチャで生産した愛馬の「素質ランク」や「各ステータス」を自由に改造・編集できます。
+              </p>
+
+              {/* ユーザー選択 */}
+              <div style={{ marginBottom: '24px' }}>
+                <label style={labelStyle}>① 確認・編集したい馬主（ユーザー）を選択</label>
+                <select 
+                  value={breedEditOwnerName} 
+                  onChange={e => setBreedEditOwnerName(e.target.value)} 
+                  style={{ padding: '14px', borderRadius: '10px', border: '2px solid #16a34a', fontSize: '16px', fontWeight: 'bold', backgroundColor: '#f0fdf4', width: '100%' }}
+                >
+                  {users.map(u => (
+                    <option key={u.id} value={u.discord_name}>
+                      👤 {u.discord_name} 様の生産所有馬リスト
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 生産馬リスト編集フォーム */}
+              <h3 style={{ margin: '20px 0 12px 0', color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
+                🐎 【{breedEditOwnerName}】 様の生産馬 ({userBredHorses.length}頭)
+              </h3>
+
+              {userBredHorses.length === 0 ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                  この馬主はまだ仔馬を生産していません。
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {userBredHorses.map(h => (
+                    <div key={h.id} style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', alignItems: 'center' }}>
+                        <div>
+                          <label style={labelStyle}>馬名</label>
+                          <input type="text" value={h.name || ''} onChange={e => handleUpdateBredHorseDetail(h.id, 'name', e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }} />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>素質ランク</label>
+                          <select value={h.rank || 'C'} onChange={e => handleUpdateBredHorseDetail(h.id, 'rank', e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#dc2626' }}>
+                            {['SS', 'S', 'A', 'B', 'C'].map(r => <option key={r} value={r}>{r}ランク</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>スピード</label>
+                          <select value={h.speed || 'B'} onChange={e => handleUpdateBredHorseDetail(h.id, 'speed', e.target.value)} style={inputStyle}>
+                            {['S', 'A', 'B', 'C', 'D'].map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>スタミナ</label>
+                          <select value={h.stamina || 'B'} onChange={e => handleUpdateBredHorseDetail(h.id, 'stamina', e.target.value)} style={inputStyle}>
+                            {['S', 'A', 'B', 'C', 'D'].map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>勝負根性</label>
+                          <select value={h.guts || 'B'} onChange={e => handleUpdateBredHorseDetail(h.id, 'guts', e.target.value)} style={inputStyle}>
+                            {['S', 'A', 'B', 'C', 'D'].map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>気性</label>
+                          <select value={h.temper || 'A'} onChange={e => handleUpdateBredHorseDetail(h.id, 'temper', e.target.value)} style={inputStyle}>
+                            {['S', 'A', 'B', 'C', 'D'].map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                        </div>
+                        <div style={{ textAlign: 'right', marginTop: '16px' }}>
+                          <button onClick={() => handleDeleteBredHorse(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
+                            削除
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 👤 TAB: プレイヤー管理 */}
           {adminTab === 'users' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
