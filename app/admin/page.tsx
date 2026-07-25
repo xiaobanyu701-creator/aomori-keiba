@@ -8,7 +8,7 @@ export default function SuperAdminConsole() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
 
-  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit' | 'news_edit'>('users');
+  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit' | 'news_edit' | 'pedigree_admin' | 'chat_admin'>('users');
 
   const [races, setRaces] = useState<any[]>([]);
   const [selectedRaceNo, setSelectedRaceNo] = useState<number>(1);
@@ -37,10 +37,12 @@ export default function SuperAdminConsole() {
   const [breedEditOwnerName, setBreedEditOwnerName] = useState<string>('');
   const [userBredHorses, setUserBredHorses] = useState<any[]>([]);
 
-  // 📢 アプデ・お知らせ管理用ステート
+  // 📢 アプデ・お知らせ＆💬 チャット＆🎁 ログボ設定用ステート
   const [newsTitle, setNewsTitle] = useState('');
   const [newsContent, setNewsContent] = useState('');
   const [newsList, setNewsList] = useState<any[]>([]);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [dailyBonusConfig, setDailyBonusConfig] = useState<number>(100000);
 
   // レース設定用
   const [editTitle, setEditTitle] = useState('');
@@ -68,7 +70,9 @@ export default function SuperAdminConsole() {
 
   useEffect(() => { 
     if (isAuthenticated) { 
-      fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters(); fetchNews();
+      fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters(); fetchNews(); fetchChat();
+      const cfg = Number(localStorage.getItem('daily_bonus_amount') || 100000);
+      setDailyBonusConfig(cfg);
     } 
   }, [isAuthenticated]);
 
@@ -170,7 +174,32 @@ export default function SuperAdminConsole() {
     }
   };
 
-  // 📢 アプデお知らせ投函
+  const fetchChat = async () => {
+    const { data } = await supabase.from('inquiries').select('*').eq('title', '【パット雑談チャット】');
+    if (data) {
+      setChatMessages([...data].reverse());
+    } else {
+      const local = JSON.parse(localStorage.getItem('app_paddock_chat') || '[]');
+      setChatMessages(local);
+    }
+  };
+
+  // 🎁 ログボ金額コントロール保存
+  const handleSaveBonusConfig = () => {
+    localStorage.setItem('daily_bonus_amount', dailyBonusConfig.toString());
+    alert(`🎁 1日1回のログインボーナス進呈額を【 ${dailyBonusConfig.toLocaleString()} G 】に設定しました！`);
+  };
+
+  // 💬 チャットメッセージ削除
+  const handleDeleteChatMessage = async (id: string) => {
+    if (!confirm('この不適切な投稿を削除しますか？')) return;
+    await supabase.from('inquiries').delete().eq('id', id);
+    const local = JSON.parse(localStorage.getItem('app_paddock_chat') || '[]');
+    const filtered = local.filter((m: any) => m.id !== id);
+    localStorage.setItem('app_paddock_chat', JSON.stringify(filtered));
+    fetchChat();
+  };
+
   const handleAddNews = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newsTitle || !newsContent) return alert('タイトルと本文を入力してください');
@@ -181,9 +210,8 @@ export default function SuperAdminConsole() {
       date: new Date().toLocaleDateString(),
     };
 
-    const { error } = await supabase.from('news').insert([newNews]);
+    await supabase.from('news').insert([newNews]);
 
-    // DBフォールバック保存
     const local = JSON.parse(localStorage.getItem('app_news_list') || '[]');
     localStorage.setItem('app_news_list', JSON.stringify([{ id: Date.now().toString(), ...newNews }, ...local]));
 
@@ -455,7 +483,8 @@ export default function SuperAdminConsole() {
     </div>
   );
 
-  const activeHorseMasters = horseMasterList.filter(h => h.status !== '引退');
+  const activeHorseMasters = horseMasterList.filter(h => h.status !== '引退' && h.status !== '種牡馬/繁殖牝馬');
+  const pedigreeHorseMasters = horseMasterList.filter(h => h.status === '種牡馬/繁殖牝馬');
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f1f5f9', fontFamily: 'sans-serif', color: '#0f172a' }}>
@@ -471,6 +500,8 @@ export default function SuperAdminConsole() {
           <div style={{ fontSize: '12px', color: '#93c5fd', fontWeight: 'bold', padding: '0 8px', marginTop: '8px' }}>マスター・全体管理</div>
           <SideButton active={adminTab === 'users'} onClick={() => setAdminTab('users')} icon="👤" text="プレイヤー管理 (お金/削除)" />
           <SideButton active={adminTab === 'breed_edit'} onClick={() => setAdminTab('breed_edit')} icon="🧬" text="生産馬 個別確認・編集" />
+          <SideButton active={adminTab === 'pedigree_admin'} onClick={() => setAdminTab('pedigree_admin')} icon="🧬" text="血統マスター管理" />
+          <SideButton active={adminTab === 'chat_admin'} onClick={() => setAdminTab('chat_admin')} icon="💬" text="パドックチャット監視・削除" />
           <SideButton active={adminTab === 'news_edit'} onClick={() => setAdminTab('news_edit')} icon="📢" text="アプデ・お知らせ配信" />
           <SideButton active={adminTab === 'owner_assign'} onClick={() => setAdminTab('owner_assign')} icon="🤝" text="馬主＆馬 紐づけ管理" />
           <SideButton active={adminTab === 'horse_masters'} onClick={() => setAdminTab('horse_masters')} icon="🐎" text="現役競走馬マスター" />
@@ -509,7 +540,154 @@ export default function SuperAdminConsole() {
 
         <div style={{ maxWidth: '1000px' }}>
 
-          {/* 📢 TAB: 新設 アプデ・お知らせ配信 */}
+          {/* 👤 TAB: プレイヤー管理 ＋ 🎁 ログボ進呈額設定 */}
+          {adminTab === 'users' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+              <div style={{ backgroundColor: '#ffffff', border: '2px solid #2563eb', borderRadius: '16px', padding: '28px' }}>
+                <h2 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '20px', fontWeight: 'bold' }}>👤 プレイヤー設定・お金追加・アカウント削除</h2>
+                
+                <div style={{ marginBottom: '24px' }}>
+                  <label style={labelStyle}>① 操作するプレイヤーを選択してください</label>
+                  <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{ padding: '14px', borderRadius: '10px', border: '2px solid #2563eb', fontSize: '16px', fontWeight: 'bold', backgroundColor: '#eff6ff', width: '100%' }}>
+                    {users.map(u => (
+                      <option key={u.id} value={u.id}>
+                        👤 {u.discord_name} （残高: {(u.balance || 0).toLocaleString()} G / PIN: {u.pin_code || '未設定'}）
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedUser && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', backgroundColor: '#f8fafc', padding: '24px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                    <div>
+                      <h4 style={{ margin: '0 0 10px 0', color: '#16a34a', fontSize: '16px' }}>💰 所持コインを追加・付与する（加算）</h4>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <input type="number" step="100000" value={amountToAddInput} onChange={e => setAmountToAddInput(Number(e.target.value))} style={{ ...inputStyle, width: '200px', fontSize: '16px', fontWeight: 'bold' }} />
+                        <span style={{ fontWeight: 'bold', color: '#475569' }}>G を</span>
+                        <button onClick={() => handleAddUserBalance(amountToAddInput)} style={{ padding: '12px 20px', backgroundColor: '#16a34a', color: '#fff', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>➕ プラス追加（加算）</button>
+                        <button onClick={() => handleAddUserBalance(-amountToAddInput)} style={{ padding: '12px 20px', backgroundColor: '#ca8a04', color: '#fff', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>➖ マイナス引き落とし</button>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                        {[1000000, 5000000, 10000000, 50000000].map(val => (
+                          <button key={val} onClick={() => handleAddUserBalance(val)} style={{ padding: '6px 12px', backgroundColor: '#dcfce7', color: '#15803d', border: '1px solid #86efac', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+                            +{(val / 10000).toLocaleString()}万円
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: 0 }} />
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 120px', gap: '20px', alignItems: 'end' }}>
+                      <div>
+                        <label style={labelStyle}>所持コイン（直接上書き）</label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input type="number" value={customBalanceInput} onChange={e => setCustomBalanceInput(e.target.value)} style={inputStyle} />
+                          <button onClick={handleSetUserBalance} style={{ padding: '10px 16px', backgroundColor: '#2563eb', color: '#fff', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>設定</button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={labelStyle}>暗証番号 (PIN 4桁)</label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input type="text" maxLength={4} value={customPinInput} onChange={e => setCustomPinInput(e.target.value)} style={{ ...inputStyle, textAlign: 'center', letterSpacing: '4px' }} />
+                          <button onClick={handleUpdateUserPin} style={{ padding: '10px 16px', backgroundColor: '#0284c7', color: '#fff', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>更新</button>
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: 'right' }}>
+                        <button onClick={() => handleDeleteUser()} style={{ width: '100%', padding: '12px', backgroundColor: '#dc2626', color: '#fff', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>🗑️ 削除</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 🎁 ログインボーナス設定カード */}
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
+                <h3 style={{ margin: '0 0 12px 0', color: '#ca8a04', fontSize: '18px', fontWeight: 'bold' }}>🎁 デイリーログインボーナス設定</h3>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <input type="number" step="10000" value={dailyBonusConfig} onChange={e=>setDailyBonusConfig(Number(e.target.value))} style={inputStyle} />
+                  <span style={{ fontWeight: 'bold' }}>G / 1日</span>
+                  <button onClick={handleSaveBonusConfig} style={{ padding: '12px 20px', backgroundColor: '#ca8a04', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>保存 💾</button>
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>📋 全登録プレイヤー一覧 ({users.length}名)</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                  {users.map(u => (
+                    <div key={u.id} style={{ backgroundColor: selectedUserId === u.id ? '#eff6ff' : '#f8fafc', padding: '16px', borderRadius: '12px', border: `2px solid ${selectedUserId === u.id ? '#2563eb' : '#e2e8f0'}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#0f172a' }}>👤 {u.discord_name}</span>
+                        <button onClick={() => setSelectedUserId(u.id)} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>選択・編集</button>
+                      </div>
+                      <div style={{ fontSize: '14px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div>所持コイン: <strong style={{ color: '#16a34a' }}>{(u.balance || 0).toLocaleString()} G</strong></div>
+                        <div>暗証番号: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{u.pin_code || '未設定'}</span></div>
+                      </div>
+                      <button onClick={() => handleDeleteUser(u.id, u.discord_name)} style={{ marginTop: '12px', width: '100%', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', padding: '6px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>🗑️ このユーザーを削除</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 🧬 TAB: 新設 殿堂入り血統マスター管理 */}
+          {adminTab === 'pedigree_admin' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
+              <h2 style={{ margin: '0 0 16px 0', color: '#8b5cf6', fontSize: '20px', fontWeight: 'bold' }}>
+                🧬 殿堂入り 種牡馬・繁殖牝馬（血統マスター）管理
+              </h2>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '16px', fontSize: '14px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#faf5ff', borderBottom: '2px solid #c084fc', textAlign: 'left' }}>
+                    <th style={{ padding: '12px' }}>馬名</th>
+                    <th>元所有馬主</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pedigreeHorseMasters.map(p => (
+                    <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '12px', fontWeight: 'bold', color: '#7e22ce' }}>🧬 {p.name}</td>
+                      <td style={{ fontWeight: 'bold', color: '#2563eb' }}>👤 {p.owner_name}</td>
+                      <td>
+                        <button onClick={() => handleDeleteHorseMaster(p.id, p.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
+                          血統ライブラリから削除
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* 💬 TAB: 新設 パドックチャット監視・削除 */}
+          {adminTab === 'chat_admin' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
+              <h2 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '20px', fontWeight: 'bold' }}>
+                💬 パドック雑談チャット リアルタイム監視＆荒らし不適切削除
+              </h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {chatMessages.map(m => (
+                  <div key={m.id} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 'bold', color: '#1e3a8a' }}>👤 {m.discord_name}</div>
+                      <div style={{ fontSize: '14px', color: '#334155', marginTop: '4px' }}>{m.content}</div>
+                    </div>
+                    <button onClick={() => handleDeleteChatMessage(m.id)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
+                      🗑️ 投稿削除
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 📢 TAB: アプデ・お知らせ配信 */}
           {adminTab === 'news_edit' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0', maxWidth: '650px' }}>
@@ -722,90 +900,6 @@ export default function SuperAdminConsole() {
                   ))}
                 </div>
               )}
-            </div>
-          )}
-
-          {/* 👤 TAB: プレイヤー管理 */}
-          {adminTab === 'users' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-              <div style={{ backgroundColor: '#ffffff', border: '2px solid #2563eb', borderRadius: '16px', padding: '28px' }}>
-                <h2 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '20px', fontWeight: 'bold' }}>👤 プレイヤー設定・お金追加・アカウント削除</h2>
-                
-                <div style={{ marginBottom: '24px' }}>
-                  <label style={labelStyle}>① 操作するプレイヤーを選択してください</label>
-                  <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{ padding: '14px', borderRadius: '10px', border: '2px solid #2563eb', fontSize: '16px', fontWeight: 'bold', backgroundColor: '#eff6ff', width: '100%' }}>
-                    {users.map(u => (
-                      <option key={u.id} value={u.id}>
-                        👤 {u.discord_name} （残高: {(u.balance || 0).toLocaleString()} G / PIN: {u.pin_code || '未設定'}）
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {selectedUser && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', backgroundColor: '#f8fafc', padding: '24px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
-                    <div>
-                      <h4 style={{ margin: '0 0 10px 0', color: '#16a34a', fontSize: '16px' }}>💰 所持コインを追加・付与する（加算）</h4>
-                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <input type="number" step="100000" value={amountToAddInput} onChange={e => setAmountToAddInput(Number(e.target.value))} style={{ ...inputStyle, width: '200px', fontSize: '16px', fontWeight: 'bold' }} />
-                        <span style={{ fontWeight: 'bold', color: '#475569' }}>G を</span>
-                        <button onClick={() => handleAddUserBalance(amountToAddInput)} style={{ padding: '12px 20px', backgroundColor: '#16a34a', color: '#fff', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>➕ プラス追加（加算）</button>
-                        <button onClick={() => handleAddUserBalance(-amountToAddInput)} style={{ padding: '12px 20px', backgroundColor: '#ca8a04', color: '#fff', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>➖ マイナス引き落とし</button>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                        {[1000000, 5000000, 10000000, 50000000].map(val => (
-                          <button key={val} onClick={() => handleAddUserBalance(val)} style={{ padding: '6px 12px', backgroundColor: '#dcfce7', color: '#15803d', border: '1px solid #86efac', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
-                            +{(val / 10000).toLocaleString()}万円
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: 0 }} />
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 120px', gap: '20px', alignItems: 'end' }}>
-                      <div>
-                        <label style={labelStyle}>所持コイン（直接上書き）</label>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <input type="number" value={customBalanceInput} onChange={e => setCustomBalanceInput(e.target.value)} style={inputStyle} />
-                          <button onClick={handleSetUserBalance} style={{ padding: '10px 16px', backgroundColor: '#2563eb', color: '#fff', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>設定</button>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label style={labelStyle}>暗証番号 (PIN 4桁)</label>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <input type="text" maxLength={4} value={customPinInput} onChange={e => setCustomPinInput(e.target.value)} style={{ ...inputStyle, textAlign: 'center', letterSpacing: '4px' }} />
-                          <button onClick={handleUpdateUserPin} style={{ padding: '10px 16px', backgroundColor: '#0284c7', color: '#fff', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>更新</button>
-                        </div>
-                      </div>
-
-                      <div style={{ textAlign: 'right' }}>
-                        <button onClick={() => handleDeleteUser()} style={{ width: '100%', padding: '12px', backgroundColor: '#dc2626', color: '#fff', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>🗑️ 削除</button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>📋 全登録プレイヤー一覧 ({users.length}名)</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-                  {users.map(u => (
-                    <div key={u.id} style={{ backgroundColor: selectedUserId === u.id ? '#eff6ff' : '#f8fafc', padding: '16px', borderRadius: '12px', border: `2px solid ${selectedUserId === u.id ? '#2563eb' : '#e2e8f0'}` }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                        <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#0f172a' }}>👤 {u.discord_name}</span>
-                        <button onClick={() => setSelectedUserId(u.id)} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>選択・編集</button>
-                      </div>
-                      <div style={{ fontSize: '14px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div>所持コイン: <strong style={{ color: '#16a34a' }}>{(u.balance || 0).toLocaleString()} G</strong></div>
-                        <div>暗証番号: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{u.pin_code || '未設定'}</span></div>
-                      </div>
-                      <button onClick={() => handleDeleteUser(u.id, u.discord_name)} style={{ marginTop: '12px', width: '100%', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', padding: '6px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>🗑️ このユーザーを削除</button>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
           )}
 

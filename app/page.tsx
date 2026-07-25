@@ -9,7 +9,7 @@ export default function IPATPage() {
   const [discordInput, setDiscordInput] = useState('');
   const [pinInput, setPinInput] = useState('');
 
-  const [mainTab, setMainTab] = useState<'bet' | 'history' | 'news'>('bet');
+  const [mainTab, setMainTab] = useState<'bet' | 'history' | 'news' | 'ranking' | 'chat'>('bet');
 
   const [races, setRaces] = useState<any[]>([]);
   const [selectedRaceNo, setSelectedRaceNo] = useState<number>(1);
@@ -17,6 +17,12 @@ export default function IPATPage() {
   const [horses, setHorses] = useState<any[]>([]);
   const [myBets, setMyBets] = useState<any[]>([]);
   const [newsList, setNewsList] = useState<any[]>([]);
+  
+  // 👑 ランキング・💬 チャット・🎁 ログボ用ステート
+  const [rankingUsers, setRankingUsers] = useState<any[]>([]);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [hasClaimedBonus, setHasClaimedBonus] = useState(false);
 
   // 投票用
   const [betType, setBetType] = useState('単勝');
@@ -28,6 +34,8 @@ export default function IPATPage() {
   useEffect(() => {
     fetchRaces();
     fetchNews();
+    fetchRanking();
+    fetchChat();
   }, []);
 
   useEffect(() => {
@@ -43,6 +51,7 @@ export default function IPATPage() {
   useEffect(() => {
     if (currentUser) {
       fetchMyBets();
+      checkDailyBonus();
     }
   }, [currentUser, selectedRaceNo]);
 
@@ -59,6 +68,68 @@ export default function IPATPage() {
       const local = JSON.parse(localStorage.getItem('app_news_list') || '[]');
       setNewsList(local);
     }
+  };
+
+  const fetchRanking = async () => {
+    const { data } = await supabase.from('users').select('*');
+    if (data) {
+      const sorted = [...data].sort((a, b) => (b.balance || 0) - (a.balance || 0));
+      setRankingUsers(sorted);
+    }
+  };
+
+  const fetchChat = async () => {
+    const { data } = await supabase.from('inquiries').select('*').eq('title', '【パット雑談チャット】');
+    if (data) {
+      setChatMessages([...data].reverse());
+    } else {
+      const local = JSON.parse(localStorage.getItem('app_paddock_chat') || '[]');
+      setChatMessages(local);
+    }
+  };
+
+  const checkDailyBonus = () => {
+    if (!currentUser) return;
+    const today = new Date().toLocaleDateString();
+    const lastClaim = localStorage.getItem(`daily_bonus_${currentUser.id}`);
+    setHasClaimedBonus(lastClaim === today);
+  };
+
+  // 🎁 ログインボーナス獲得
+  const handleClaimDailyBonus = async () => {
+    if (!currentUser || hasClaimedBonus) return;
+    const today = new Date().toLocaleDateString();
+    const bonusAmount = Number(localStorage.getItem('daily_bonus_amount') || 100000);
+
+    const newBal = (currentUser.balance || 0) + bonusAmount;
+    await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
+
+    localStorage.setItem(`daily_bonus_${currentUser.id}`, today);
+    setCurrentUser({ ...currentUser, balance: newBal });
+    setHasClaimedBonus(true);
+    alert(`🎁 本日のログインボーナス【 ${bonusAmount.toLocaleString()} G 】を受け取りました！`);
+    fetchRanking();
+  };
+
+  // 💬 パドックチャット送信
+  const handleSendChat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !currentUser) return;
+
+    const newMsg = {
+      user_id: currentUser.id,
+      discord_name: currentUser.discord_name,
+      title: '【パット雑談チャット】',
+      content: chatInput,
+    };
+
+    const { error } = await supabase.from('inquiries').insert([newMsg]);
+
+    const local = JSON.parse(localStorage.getItem('app_paddock_chat') || '[]');
+    localStorage.setItem('app_paddock_chat', JSON.stringify([{ id: Date.now().toString(), ...newMsg, created_at: new Date().toLocaleTimeString() }, ...local]));
+
+    setChatInput('');
+    fetchChat();
   };
 
   const fetchHorsesAndOnlineOdds = async (raceId: string) => {
@@ -167,6 +238,7 @@ export default function IPATPage() {
     alert(`🎫 【${currentRace.race_number}R】${betType} (${selection}) を ${betAmount.toLocaleString()} G で購入しました！`);
     fetchMyBets();
     fetchHorsesAndOnlineOdds(currentRace.id);
+    fetchRanking();
   };
 
   const isFinished = currentRace?.status === 'finished';
@@ -210,9 +282,28 @@ export default function IPATPage() {
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           {currentUser ? (
-            <div style={{ backgroundColor: '#1e40af', padding: '8px 20px', borderRadius: '25px', display: 'flex', gap: '16px', border: '1px solid #60a5fa' }}>
-              <span>👤 {currentUser.discord_name} 様</span>
-              <span style={{ color: '#fef08a', fontWeight: 'bold' }}>{(currentUser.balance || 0).toLocaleString()} G</span>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <button
+                onClick={handleClaimDailyBonus}
+                disabled={hasClaimedBonus}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '20px',
+                  border: 'none',
+                  fontWeight: 'bold',
+                  cursor: hasClaimedBonus ? 'default' : 'pointer',
+                  backgroundColor: hasClaimedBonus ? '#64748b' : '#eab308',
+                  color: '#fff',
+                  fontSize: '13px',
+                }}
+              >
+                {hasClaimedBonus ? '🎁 本日受取済' : '🎁 ログボ受け取る'}
+              </button>
+
+              <div style={{ backgroundColor: '#1e40af', padding: '8px 20px', borderRadius: '25px', display: 'flex', gap: '16px', border: '1px solid #60a5fa' }}>
+                <span>👤 {currentUser.discord_name} 様</span>
+                <span style={{ color: '#fef08a', fontWeight: 'bold' }}>{(currentUser.balance || 0).toLocaleString()} G</span>
+              </div>
             </div>
           ) : (
             <span style={{ color: '#93c5fd', fontSize: '14px' }}>未ログイン</span>
@@ -253,10 +344,12 @@ export default function IPATPage() {
           </div>
         ) : (
           <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
-            <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px' }}>
-              <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text={isFinished ? '🏁 レース確定結果・払戻金' : '🎫 馬券投票（オッズ自動連動）'} />
-              <TabBtn active={mainTab === 'history'} onClick={() => setMainTab('history')} text={`📋 馬券購入履歴 (${myBets.length}件)`} />
-              <TabBtn active={mainTab === 'news'} onClick={() => setMainTab('news')} text={`📢 アプデ・お知らせ (${newsList.length}件)`} />
+            <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px', overflowX: 'auto' }}>
+              <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text={isFinished ? '🏁 レース確定結果・払戻金' : '🎫 馬券投票'} />
+              <TabBtn active={mainTab === 'history'} onClick={() => setMainTab('history')} text={`📋 履歴 (${myBets.length})`} />
+              <TabBtn active={mainTab === 'ranking'} onClick={() => setMainTab('ranking')} text="👑 資産ランキング" />
+              <TabBtn active={mainTab === 'chat'} onClick={() => setMainTab('chat')} text="💬 パドック予想掲示板" />
+              <TabBtn active={mainTab === 'news'} onClick={() => setMainTab('news')} text={`📢 アプデ (${newsList.length})`} />
             </div>
 
             {mainTab === 'bet' && (
@@ -490,6 +583,78 @@ export default function IPATPage() {
               </div>
             )}
 
+            {/* 👑 新設: 王冠資産ランキング */}
+            {mainTab === 'ranking' && (
+              <div>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>👑 青森県競馬 リアルタイム資産ランキング</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {rankingUsers.map((u, index) => {
+                    const rank = index + 1;
+                    const crown = rank === 1 ? '👑 金冠' : rank === 2 ? '🥈 銀冠' : rank === 3 ? '🥉 銅冠' : `${rank}位`;
+                    const isMe = u.id === currentUser?.id;
+
+                    return (
+                      <div
+                        key={u.id}
+                        style={{
+                          backgroundColor: isMe ? '#eff6ff' : '#f8fafc',
+                          padding: '16px 20px',
+                          borderRadius: '12px',
+                          border: `2px solid ${rank === 1 ? '#eab308' : isMe ? '#2563eb' : '#cbd5e1'}`,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                          <span style={{ fontSize: '18px', fontWeight: '900', color: rank === 1 ? '#ca8a04' : '#475569', width: '80px' }}>
+                            {crown}
+                          </span>
+                          <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#0f172a' }}>
+                            👤 {u.discord_name} {isMe && '(あなた)'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '18px', fontWeight: '900', color: '#16a34a' }}>
+                          {(u.balance || 0).toLocaleString()} G
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 💬 新設: パドック予想＆雑談掲示板 */}
+            {mainTab === 'chat' && (
+              <div>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>💬 パドック予想 ＆ リアルタイム雑談掲示板</h3>
+                <form onSubmit={handleSendChat} style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+                  <input
+                    type="text"
+                    placeholder="予想やパドックの感想を投稿しよう！"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
+                  <button type="submit" style={{ padding: '12px 24px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                    投稿 💬
+                  </button>
+                </form>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {chatMessages.map((m) => (
+                    <div key={m.id} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span style={{ fontWeight: 'bold', color: '#1e3a8a' }}>👤 {m.discord_name}</span>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>{m.created_at || 'たった今'}</span>
+                      </div>
+                      <div style={{ fontSize: '14px', color: '#334155' }}>{m.content}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {mainTab === 'history' && (
               <div>
                 <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>📋 あなたの馬券購入履歴・的中一覧</h3>
@@ -555,7 +720,6 @@ export default function IPATPage() {
               </div>
             )}
 
-            {/* 📢 アプデ・お知らせ一覧（【修正箇所】whiteSpaceを大文字に修正完了） */}
             {mainTab === 'news' && (
               <div>
                 <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>📢 運営からのアプデ・お知らせ一覧</h3>

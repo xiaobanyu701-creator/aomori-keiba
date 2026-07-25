@@ -9,10 +9,11 @@ export default function OwnerPage() {
   const [discordInput, setDiscordInput] = useState('');
   const [pinInput, setPinInput] = useState('');
 
-  const [activeTab, setActiveTab] = useState<'my_horses' | 'breed' | 'jockey'>('my_horses');
+  const [activeTab, setActiveTab] = useState<'my_horses' | 'breed' | 'pedigree' | 'jockey'>('my_horses');
 
   const [myHorses, setMyHorses] = useState<any[]>([]);
   const [jockeyList, setJockeyList] = useState<any[]>([]);
+  const [pedigreeList, setPedigreeList] = useState<any[]>([]);
 
   const [newHorseName, setNewHorseName] = useState('');
   const [selectedHorseName, setSelectedHorseName] = useState('');
@@ -20,6 +21,7 @@ export default function OwnerPage() {
 
   useEffect(() => {
     fetchJockeys();
+    fetchPedigree();
   }, []);
 
   useEffect(() => {
@@ -37,6 +39,16 @@ export default function OwnerPage() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const fetchPedigree = async () => {
+    const { data } = await supabase.from('horse_masters').select('*').eq('status', '種牡馬/繁殖牝馬');
+    if (data) {
+      setPedigreeList(data);
+    } else {
+      const local = JSON.parse(localStorage.getItem('app_pedigree_masters') || '[]');
+      setPedigreeList(local);
     }
   };
 
@@ -141,6 +153,20 @@ export default function OwnerPage() {
     setActiveTab('my_horses');
   };
 
+  // 🧬 殿堂入り種牡馬・繁殖牝馬登録申請
+  const handleRegisterPedigree = async (horseId: string, horseName: string) => {
+    if (!confirm(`「${horseName}」を伝説の「種牡馬/繁殖牝馬」として血統登録しますか？`)) return;
+
+    await supabase.from('horse_masters').update({ status: '種牡馬/繁殖牝馬' }).eq('id', horseId);
+
+    const local = JSON.parse(localStorage.getItem('app_pedigree_masters') || '[]');
+    localStorage.setItem('app_pedigree_masters', JSON.stringify([{ id: horseId, name: horseName, owner_name: currentUser.discord_name, status: '種牡馬/繁殖牝馬' }, ...local]));
+
+    alert(`🧬 「${horseName}」を血統ライブラリへ登録しました！`);
+    loadMyHorses();
+    fetchPedigree();
+  };
+
   const handleRetireRequest = async (horseId: string, horseName: string) => {
     if (!confirm(`「${horseName}」の引退を管理者に申請しますか？`)) return;
     await supabase.from('horse_masters').update({ status: '引退申請中' }).eq('id', horseId);
@@ -229,9 +255,10 @@ export default function OwnerPage() {
         ) : (
           <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
             
-            <div style={{ display: 'flex', gap: '12px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', gap: '12px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px', overflowX: 'auto' }}>
               <TabBtn active={activeTab === 'my_horses'} onClick={() => setActiveTab('my_horses')} text="📋 自分の所有馬一覧" />
               <TabBtn active={activeTab === 'breed'} onClick={() => setActiveTab('breed')} text="🎲 10万円 仔馬生産" />
+              <TabBtn active={activeTab === 'pedigree'} onClick={() => setActiveTab('pedigree')} text={`🧬 伝説血統書 (${pedigreeList.length})`} />
               <TabBtn active={activeTab === 'jockey'} onClick={() => setActiveTab('jockey')} text="🏇 騎手変更申請" />
             </div>
 
@@ -246,6 +273,7 @@ export default function OwnerPage() {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
                     {myHorses.map((h, i) => {
                       const isRetired = h.status === '引退';
+                      const isPedigree = h.status === '種牡馬/繁殖牝馬';
                       const isPendingRetire = h.status === '引退申請中';
                       const isRunning = h.status?.includes('出走');
 
@@ -253,7 +281,7 @@ export default function OwnerPage() {
                         <div key={h.id || i} style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                             <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#16a34a' }}>🐎 {h.name}</span>
-                            <span style={{ fontSize: '11px', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px', color: '#fff', backgroundColor: isRetired ? '#64748b' : isPendingRetire ? '#eab308' : isRunning ? '#dc2626' : '#16a34a' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px', color: '#fff', backgroundColor: isPedigree ? '#8b5cf6' : isRetired ? '#64748b' : isPendingRetire ? '#eab308' : isRunning ? '#dc2626' : '#16a34a' }}>
                               {h.status || '現役'}
                             </span>
                           </div>
@@ -264,13 +292,21 @@ export default function OwnerPage() {
                             <div>スピード: {h.speed || 'B'} / スタミナ: {h.stamina || 'B'} / 根性: {h.guts || 'B'}</div>
                           </div>
 
-                          {!isRetired && !isPendingRetire && h.id && (
-                            <button
-                              onClick={() => handleRetireRequest(h.id, h.name)}
-                              style={{ marginTop: '12px', width: '100%', backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
-                            >
-                              引退を申請する 🛑
-                            </button>
+                          {!isRetired && !isPendingRetire && !isPedigree && h.id && (
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                              <button
+                                onClick={() => handleRegisterPedigree(h.id, h.name)}
+                                style={{ flex: 1, backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                              >
+                                種牡馬/繁殖登録 🧬
+                              </button>
+                              <button
+                                onClick={() => handleRetireRequest(h.id, h.name)}
+                                style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                              >
+                                引退 🛑
+                              </button>
+                            </div>
                           )}
                         </div>
                       );
@@ -295,6 +331,28 @@ export default function OwnerPage() {
                     100,000 G で2歳馬を誕生・自動登録 🎲
                   </button>
                 </form>
+              </div>
+            )}
+
+            {/* 🧬 殿堂入り血統書表示 */}
+            {activeTab === 'pedigree' && (
+              <div>
+                <h3 style={{ margin: '0 0 16px 0', color: '#8b5cf6' }}>🧬 殿堂入り 伝説の種牡馬・繁殖牝馬ライブラリ</h3>
+                {pedigreeList.length === 0 ? (
+                  <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                    まだ登録された種牡馬・繁殖牝馬がいません。愛馬を種牡馬登録してみましょう！
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                    {pedigreeList.map((p) => (
+                      <div key={p.id} style={{ backgroundColor: '#faf5ff', padding: '18px', borderRadius: '12px', border: '2px solid #c084fc' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#7e22ce', marginBottom: '6px' }}>🧬 {p.name}</div>
+                        <div style={{ fontSize: '13px', color: '#6b21a8' }}>元馬主: {p.owner_name}</div>
+                        <div style={{ fontSize: '12px', color: '#a855f7', marginTop: '4px', fontWeight: 'bold' }}>⭐ 伝説の継承血統</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
