@@ -8,7 +8,7 @@ export default function SuperAdminConsole() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
 
-  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit' | 'news_edit' | 'pedigree_admin' | 'chat_admin'>('users');
+  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit' | 'news_edit' | 'pedigree_admin' | 'chat_admin' | 'auction_admin'>('users');
 
   const [races, setRaces] = useState<any[]>([]);
   const [selectedRaceNo, setSelectedRaceNo] = useState<number>(1);
@@ -38,7 +38,7 @@ export default function SuperAdminConsole() {
   const [breedEditOwnerName, setBreedEditOwnerName] = useState<string>('');
   const [userBredHorses, setUserBredHorses] = useState<any[]>([]);
 
-  // 📢 アプデ・お知らせ＆💬 チャット＆🎁 ログボ＆🏋️‍♂️ 調教確率設定用ステート
+  // 📢 アプデ＆💬 チャット＆🎁 ログボ＆🏋️‍♂️ 調教＆🔨 公式セレクトセール用ステート
   const [newsTitle, setNewsTitle] = useState('');
   const [newsContent, setNewsContent] = useState('');
   const [newsList, setNewsList] = useState<any[]>([]);
@@ -46,6 +46,9 @@ export default function SuperAdminConsole() {
   const [dailyBonusConfig, setDailyBonusConfig] = useState<number>(100000);
   const [trainingSuccessRate, setTrainingSuccessRate] = useState<number>(70);
   const [trainingSuperRate, setTrainingSuperRate] = useState<number>(15);
+
+  const [officialHorseName, setOfficialHorseName] = useState('');
+  const [officialStartPrice, setOfficialStartPrice] = useState<number>(1000000);
 
   // レース設定用
   const [editTitle, setEditTitle] = useState('');
@@ -194,7 +197,26 @@ export default function SuperAdminConsole() {
     }
   };
 
-  // 🏋️‍♂️ 調教成功確率の変更保存
+  // 👑 運営公式セレクトセール（SS目玉馬出品）
+  const handleAddOfficialAuction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!officialHorseName) return alert('馬名を入力してください');
+
+    await supabase.from('auctions').insert([
+      {
+        horse_name: officialHorseName,
+        seller_name: '青森県競馬運営公式',
+        current_bid: officialStartPrice,
+        highest_bidder: 'なし',
+        is_official: true,
+        status: 'active',
+      },
+    ]);
+
+    alert(`👑 運営公式セレクトセールに「${officialHorseName}」を出品しました！`);
+    setOfficialHorseName('');
+  };
+
   const handleSaveTrainingRates = () => {
     localStorage.setItem('training_success_rate', trainingSuccessRate.toString());
     localStorage.setItem('training_super_rate', trainingSuperRate.toString());
@@ -497,6 +519,7 @@ export default function SuperAdminConsole() {
         <div style={{ display: 'flex', flexDirection: 'column', padding: '16px 8px', gap: '8px', flex: 1 }}>
           <div style={{ fontSize: '12px', color: '#93c5fd', fontWeight: 'bold', padding: '0 8px', marginTop: '8px' }}>マスター・全体管理</div>
           <SideButton active={adminTab === 'users'} onClick={() => setAdminTab('users')} icon="👤" text="プレイヤー管理 (お金/称号/削除)" />
+          <SideButton active={adminTab === 'auction_admin'} onClick={() => setAdminTab('auction_admin')} icon="🔨" text="公式セレクトセール出品" />
           <SideButton active={adminTab === 'breed_edit'} onClick={() => setAdminTab('breed_edit')} icon="🧬" text="生産馬 個別確認・編集" />
           <SideButton active={adminTab === 'pedigree_admin'} onClick={() => setAdminTab('pedigree_admin')} icon="🧬" text="血統マスター管理" />
           <SideButton active={adminTab === 'chat_admin'} onClick={() => setAdminTab('chat_admin')} icon="💬" text="パドックチャット監視・削除" />
@@ -537,6 +560,28 @@ export default function SuperAdminConsole() {
         )}
 
         <div style={{ maxWidth: '1000px' }}>
+
+          {/* 🔨 TAB: 新設 運営公式セレクトセール出品 */}
+          {adminTab === 'auction_admin' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0', maxWidth: '600px' }}>
+              <h2 style={{ margin: '0 0 16px 0', color: '#d97706', fontSize: '20px', fontWeight: 'bold' }}>
+                🔨 運営公式 セレクトセール出品
+              </h2>
+              <form onSubmit={handleAddOfficialAuction} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={labelStyle}>目玉競走馬の名前</label>
+                  <input type="text" placeholder="例: ★SS確定 サンデーサイレンス産駒" value={officialHorseName} onChange={e=>setOfficialHorseName(e.target.value)} style={inputStyle} required />
+                </div>
+                <div>
+                  <label style={labelStyle}>最低開始価格 (G)</label>
+                  <input type="number" step="100000" value={officialStartPrice} onChange={e=>setOfficialStartPrice(Number(e.target.value))} style={inputStyle} required />
+                </div>
+                <button type="submit" style={{ padding: '14px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
+                  👑 運営公式セレクトセールに目玉馬を出品する 🔨
+                </button>
+              </form>
+            </div>
+          )}
 
           {/* 👤 TAB: プレイヤー管理 ＋ 🎖️ 称号授与 ＋ 🎁 ログボ ＋ 🏋️‍♂️ 調教確率設定 */}
           {adminTab === 'users' && (
@@ -604,7 +649,7 @@ export default function SuperAdminConsole() {
                 )}
               </div>
 
-              {/* 🏋️‍♂️ 新設: 馬主限定 調教成功確率コントロールパネル */}
+              {/* 🏋️‍♂️ 馬主限定 調教成功確率コントロールパネル */}
               <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '2px solid #2563eb' }}>
                 <h3 style={{ margin: '0 0 12px 0', color: '#2563eb', fontSize: '18px', fontWeight: 'bold' }}>🏋️‍♂️ 馬主限定「調教成功・大成功確率」設定</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 120px', gap: '16px', alignItems: 'end' }}>

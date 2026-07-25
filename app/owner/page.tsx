@@ -9,13 +9,17 @@ export default function OwnerPage() {
   const [discordInput, setDiscordInput] = useState('');
   const [pinInput, setPinInput] = useState('');
 
-  const [activeTab, setActiveTab] = useState<'my_horses' | 'breed' | 'pedigree' | 'jockey'>('my_horses');
+  const [activeTab, setActiveTab] = useState<'my_horses' | 'starhorse_breed' | 'pedigree' | 'jockey'>('my_horses');
 
   const [myHorses, setMyHorses] = useState<any[]>([]);
   const [jockeyList, setJockeyList] = useState<any[]>([]);
   const [pedigreeList, setPedigreeList] = useState<any[]>([]);
 
-  const [newHorseName, setNewHorseName] = useState('');
+  // 🧬 スタホ配合用ステート
+  const [selectedSire, setSelectedSire] = useState('');
+  const [selectedDam, setSelectedDam] = useState('');
+  const [foalNameInput, setFoalNameInput] = useState('');
+
   const [selectedHorseName, setSelectedHorseName] = useState('');
   const [selectedJockey, setSelectedJockey] = useState('');
 
@@ -46,6 +50,10 @@ export default function OwnerPage() {
     const { data } = await supabase.from('horse_masters').select('*').eq('status', '種牡馬/繁殖牝馬');
     if (data) {
       setPedigreeList(data);
+      if (data.length > 0) {
+        setSelectedSire(data[0].name);
+        setSelectedDam(data[0].name);
+      }
     } else {
       const local = JSON.parse(localStorage.getItem('app_pedigree_masters') || '[]');
       setPedigreeList(local);
@@ -101,64 +109,77 @@ export default function OwnerPage() {
     }
   };
 
-  const handleBreedGacha = async (e: React.FormEvent) => {
+  // 🧬 スタホ風 自家製本格配合（父×母）
+  const handleStarhorseBreed = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newHorseName.trim()) return alert('馬名を入力してください');
-    if ((currentUser.balance || 0) < 100000) return alert('資金が足りません');
+    if (!foalNameInput.trim()) return alert('仔馬の名前を入力してください');
+    if (!selectedSire || !selectedDam) return alert('父馬と母馬を選択してください');
+    if (selectedSire === selectedDam) return alert('父馬と母馬には異なる血統を選択してください');
 
-    const probs = JSON.parse(localStorage.getItem('breeding_probs') || '{"SS":5,"S":15,"A":20,"B":30,"C":30}');
-    const rand = Math.random() * 100;
+    // 自分の所有種牡馬なら種付け料0G（無料）、他なら500,000G
+    const sireObj = pedigreeList.find(p => p.name === selectedSire);
+    const isMySire = sireObj?.owner_name === currentUser.discord_name;
+    const fee = isMySire ? 0 : 500000;
 
-    let rank = 'C';
-    if (rand < probs.SS) rank = 'SS';
-    else if (rand < probs.SS + probs.S) rank = 'S';
-    else if (rand < probs.SS + probs.S + probs.A) rank = 'A';
-    else if (rand < probs.SS + probs.S + probs.A + probs.B) rank = 'B';
+    if ((currentUser.balance || 0) < fee) return alert('種付け費用が足りません');
 
-    const paramMap: { [key: string]: string[] } = {
-      SS: ['S', 'S', 'A', 'S'],
-      S: ['A', 'S', 'B', 'A'],
-      A: ['A', 'B', 'B', 'A'],
-      B: ['B', 'C', 'B', 'B'],
-      C: ['C', 'C', 'C', 'C'],
-    };
-
-    const [speed, stamina, guts, temper] = paramMap[rank];
+    // 素質継承判定
+    const ranks = ['SS', 'S', 'A', 'B'];
+    const inheritedRank = isMySire ? 'SS' : ranks[Math.floor(Math.random() * ranks.length)];
 
     await supabase.from('horse_masters').insert([
       {
-        name: newHorseName,
+        name: foalNameInput,
         owner_name: currentUser.discord_name,
-        rank: rank,
-        speed: speed,
-        stamina: stamina,
-        guts: guts,
-        temper: temper,
+        sire_name: selectedSire,
+        dam_name: selectedDam,
+        rank: inheritedRank,
+        speed: 'S',
+        stamina: 'A',
+        guts: 'A',
+        temper: 'A',
         status: '現役',
+        generation: 2,
       },
     ]);
 
-    const newHorseObj = { id: Date.now().toString(), name: newHorseName, owner_name: currentUser.discord_name, rank, speed, stamina, guts, temper, status: '現役' };
-    const localKey = `my_2yo_horses_${currentUser.discord_name}`;
-    const currentLoc = JSON.parse(localStorage.getItem(localKey) || '[]');
-    localStorage.setItem(localKey, JSON.stringify([newHorseObj, ...currentLoc]));
-
-    const newBal = (currentUser.balance || 0) - 100000;
+    const newBal = (currentUser.balance || 0) - fee;
     await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
 
     setCurrentUser({ ...currentUser, balance: newBal });
-    setNewHorseName('');
-    alert(`🎉 2歳仔馬「${newHorseName}」が誕生しました！\n【総合素質: ${rank}】\nスピード: ${speed} / スタミナ: ${stamina} / 根性: ${guts} / 気性: ${temper}`);
+    setFoalNameInput('');
+    alert(`🎉 【${selectedSire} × ${selectedDam}】の超良血配合により「${foalNameInput}」が誕生しました！\n【確定素質: ${inheritedRank}ランク】`);
     loadMyHorses();
     setActiveTab('my_horses');
   };
 
-  // 🏋️‍♂️ 管理者設定の確率に基づく「坂路・ウッド調教」システム
+  // 🔨 セリ市へ愛馬を出品
+  const handleSellAtAuction = async (horseId: string, horseName: string) => {
+    const startPriceStr = prompt(`「${horseName}」をセリ市に出品します。最低落札（開始）価格を入力してください(G):`, '500000');
+    if (!startPriceStr) return;
+    const startPrice = Number(startPriceStr);
+
+    await supabase.from('auctions').insert([
+      {
+        horse_id: horseId,
+        horse_name: horseName,
+        seller_name: currentUser.discord_name,
+        current_bid: startPrice,
+        highest_bidder: 'なし',
+        is_official: false,
+        status: 'active',
+      },
+    ]);
+
+    await supabase.from('horse_masters').update({ status: 'セリ出品中' }).eq('id', horseId);
+    alert(`🔨 「${horseName}」をセリ市へ出品しました！`);
+    loadMyHorses();
+  };
+
   const handleTrainHorse = async (horseId: string, horseName: string, type: string) => {
     if ((currentUser.balance || 0) < 50000) return alert('調教費用 (50,000 G) が足りません');
     if (!confirm(`「${horseName}」を【${type}調教】しますか？ (費用: 50,000 G)`)) return;
 
-    // 管理者設定の成功・大成功確率を取得
     const successRate = Number(localStorage.getItem('training_success_rate') || 70);
     const superRate = Number(localStorage.getItem('training_super_rate') || 15);
 
@@ -295,7 +316,7 @@ export default function OwnerPage() {
             
             <div style={{ display: 'flex', gap: '12px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px', overflowX: 'auto' }}>
               <TabBtn active={activeTab === 'my_horses'} onClick={() => setActiveTab('my_horses')} text="📋 自分の所有馬一覧" />
-              <TabBtn active={activeTab === 'breed'} onClick={() => setActiveTab('breed')} text="🎲 10万円 仔馬生産" />
+              <TabBtn active={activeTab === 'starhorse_breed'} onClick={() => setActiveTab('starhorse_breed')} text="🧬 スタホ風 本格配合生産" />
               <TabBtn active={activeTab === 'pedigree'} onClick={() => setActiveTab('pedigree')} text={`🧬 伝説血統書 (${pedigreeList.length})`} />
               <TabBtn active={activeTab === 'jockey'} onClick={() => setActiveTab('jockey')} text="🏇 騎手変更申請" />
             </div>
@@ -305,7 +326,7 @@ export default function OwnerPage() {
                 <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🐎 自分の所有馬一覧 ({myHorses.length}頭)</h3>
                 {myHorses.length === 0 ? (
                   <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
-                    まだ所有馬がいません。「10万円 仔馬生産」で生産するか、管理者の割り当てをお待ちください。
+                    まだ所有馬がいません。「スタホ風 本格配合」で生産するか、管理者の割り当てをお待ちください。
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
@@ -314,32 +335,35 @@ export default function OwnerPage() {
                       const isPedigree = h.status === '種牡馬/繁殖牝馬';
                       const isPendingRetire = h.status === '引退申請中';
                       const isRunning = h.status?.includes('出走');
+                      const isAuction = h.status === 'セリ出品中';
 
                       return (
                         <div key={h.id || i} style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                             <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#16a34a' }}>🐎 {h.name}</span>
-                            <span style={{ fontSize: '11px', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px', color: '#fff', backgroundColor: isPedigree ? '#8b5cf6' : isRetired ? '#64748b' : isPendingRetire ? '#eab308' : isRunning ? '#dc2626' : '#16a34a' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px', color: '#fff', backgroundColor: isAuction ? '#d97706' : isPedigree ? '#8b5cf6' : isRetired ? '#64748b' : isPendingRetire ? '#eab308' : isRunning ? '#dc2626' : '#16a34a' }}>
                               {h.status || '現役'}
                             </span>
                           </div>
 
                           <div style={{ fontSize: '13px', marginTop: '10px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <div>馬主: <strong>{currentUser.discord_name}</strong></div>
+                            <div>血統: <strong>{h.sire_name || '自家'} × {h.dam_name || '自家'} ({h.generation || 1}代目)</strong></div>
                             <div>総合素質: <strong style={{ color: '#dc2626' }}>【{h.rank || 'B'}ランク】</strong></div>
                             <div>スピード: {h.speed || 'B'} / スタミナ: {h.stamina || 'B'} / 根性: {h.guts || 'B'}</div>
                           </div>
 
-                          {!isRetired && !isPendingRetire && !isPedigree && h.id && (
+                          {!isRetired && !isPendingRetire && !isPedigree && !isAuction && h.id && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
                               <div style={{ display: 'flex', gap: '4px' }}>
                                 <button onClick={() => handleTrainHorse(h.id, h.name, '坂路')} style={{ flex: 1, backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>坂路(速)</button>
                                 <button onClick={() => handleTrainHorse(h.id, h.name, 'ウッド')} style={{ flex: 1, backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>ウッド(根)</button>
                                 <button onClick={() => handleTrainHorse(h.id, h.name, 'プール')} style={{ flex: 1, backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>プール(体)</button>
                               </div>
-                              <div style={{ display: 'flex', gap: '8px' }}>
-                                <button onClick={() => handleRegisterPedigree(h.id, h.name)} style={{ flex: 1, backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>種牡馬登録 🧬</button>
-                                <button onClick={() => handleRetireRequest(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>引退 🛑</button>
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <button onClick={() => handleSellAtAuction(h.id, h.name)} style={{ flex: 1, backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>セリ出品 🔨</button>
+                                <button onClick={() => handleRegisterPedigree(h.id, h.name)} style={{ flex: 1, backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>種牡馬 🧬</button>
+                                <button onClick={() => handleRetireRequest(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>引退 🛑</button>
                               </div>
                             </div>
                           )}
@@ -351,19 +375,43 @@ export default function OwnerPage() {
               </div>
             )}
 
-            {activeTab === 'breed' && (
-              <div style={{ maxWidth: '500px' }}>
-                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🎲 10万円 仔馬（2歳）生産ガチャ</h3>
+            {/* 🧬 スタホ風 自家製配合（父×母） */}
+            {activeTab === 'starhorse_breed' && (
+              <div style={{ maxWidth: '600px' }}>
+                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🧬 スタホ風 自家製本格配合（父×母）</h3>
                 <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
-                  100,000 G で新しい2歳仔馬を生産します。オンライン保存され管理者画面からもリアルタイムで確認・編集できます！
+                  殿堂入りした自分の所有種牡馬なら<strong>種付け料0G (無料)</strong>で種付けできます！
                 </p>
-                <form onSubmit={handleBreedGacha} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <form onSubmit={handleStarhorseBreed} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   <div>
-                    <label style={labelStyle}>新しい競走馬の名前</label>
-                    <input type="text" placeholder="例: ツガルキング" value={newHorseName} onChange={(e) => setNewHorseName(e.target.value)} style={inputStyle} required />
+                    <label style={labelStyle}>① 父馬（種牡馬）を選択</label>
+                    <select value={selectedSire} onChange={e => setSelectedSire(e.target.value)} style={inputStyle}>
+                      {pedigreeList.map(p => (
+                        <option key={p.id} value={p.name}>
+                          🧬 {p.name} (元所有: {p.owner_name} {p.owner_name === currentUser.discord_name ? '【自分・種付け料無料】' : '【他馬主・50万G】'})
+                        </option>
+                      ))}
+                    </select>
                   </div>
+
+                  <div>
+                    <label style={labelStyle}>② 母馬（繁殖牝馬）を選択</label>
+                    <select value={selectedDam} onChange={e => setSelectedDam(e.target.value)} style={inputStyle}>
+                      {pedigreeList.map(p => (
+                        <option key={p.id} value={p.name}>
+                          🧬 {p.name} (元所有: {p.owner_name})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={labelStyle}>③ 誕生する仔馬の名前</label>
+                    <input type="text" placeholder="例: カマクラキング" value={foalNameInput} onChange={e => setFoalNameInput(e.target.value)} style={inputStyle} required />
+                  </div>
+
                   <button type="submit" style={{ padding: '16px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-                    100,000 G で2歳馬を誕生・自動登録 🎲
+                    この配合で最強仔馬を生産する 🧬
                   </button>
                 </form>
               </div>

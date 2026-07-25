@@ -9,7 +9,7 @@ export default function IPATPage() {
   const [discordInput, setDiscordInput] = useState('');
   const [pinInput, setPinInput] = useState('');
 
-  const [mainTab, setMainTab] = useState<'bet' | 'history' | 'news' | 'ranking' | 'chat'>('bet');
+  const [mainTab, setMainTab] = useState<'bet' | 'history' | 'news' | 'ranking' | 'chat' | 'auction'>('bet');
 
   const [races, setRaces] = useState<any[]>([]);
   const [selectedRaceNo, setSelectedRaceNo] = useState<number>(1);
@@ -18,11 +18,15 @@ export default function IPATPage() {
   const [myBets, setMyBets] = useState<any[]>([]);
   const [newsList, setNewsList] = useState<any[]>([]);
   
+  // 👑 ランキング・💬 チャット・🎁 ログボ・🔨 セリ市用ステート
   const [rankingUsers, setRankingUsers] = useState<any[]>([]);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [hasClaimedBonus, setHasClaimedBonus] = useState(false);
+  const [auctions, setAuctions] = useState<any[]>([]);
+  const [bidAmountInput, setBidAmountInput] = useState<number>(100000);
 
+  // 投票用
   const [betType, setBetType] = useState('単勝');
   const [selectedHorse1, setSelectedHorse1] = useState('');
   const [selectedHorse2, setSelectedHorse2] = useState('');
@@ -34,6 +38,7 @@ export default function IPATPage() {
     fetchNews();
     fetchRanking();
     fetchChat();
+    fetchAuctions();
   }, []);
 
   useEffect(() => {
@@ -86,6 +91,11 @@ export default function IPATPage() {
     }
   };
 
+  const fetchAuctions = async () => {
+    const { data } = await supabase.from('auctions').select('*').eq('status', 'active');
+    if (data) setAuctions(data);
+  };
+
   const checkDailyBonus = () => {
     if (!currentUser) return;
     const today = new Date().toLocaleDateString();
@@ -126,6 +136,21 @@ export default function IPATPage() {
 
     setChatInput('');
     fetchChat();
+  };
+
+  // 🔨 セリ市（オークション入札）処理
+  const handlePlaceBid = async (auctionId: string, currentBid: number) => {
+    if (!currentUser) return alert('ログインしてください');
+    if (bidAmountInput <= currentBid) return alert('現在の最高入札額より高く入札してください');
+    if ((currentUser.balance || 0) < bidAmountInput) return alert('所持コインが足りません');
+
+    await supabase.from('auctions').update({
+      current_bid: bidAmountInput,
+      highest_bidder: currentUser.discord_name,
+    }).eq('id', auctionId);
+
+    alert(`🔨 【${bidAmountInput.toLocaleString()} G】で競り（入札）を行いました！現在最高額提示者です！`);
+    fetchAuctions();
   };
 
   const fetchHorsesAndOnlineOdds = async (raceId: string) => {
@@ -344,6 +369,7 @@ export default function IPATPage() {
             <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px', overflowX: 'auto' }}>
               <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text={isFinished ? '🏁 レース確定結果・払戻金' : '🎫 馬券投票'} />
               <TabBtn active={mainTab === 'history'} onClick={() => setMainTab('history')} text={`📋 履歴 (${myBets.length})`} />
+              <TabBtn active={mainTab === 'auction'} onClick={() => setMainTab('auction')} text={`🔨 セリ市・オークション (${auctions.length})`} />
               <TabBtn active={mainTab === 'ranking'} onClick={() => setMainTab('ranking')} text="👑 資産ランキング" />
               <TabBtn active={mainTab === 'chat'} onClick={() => setMainTab('chat')} text="💬 パドック予想掲示板" />
               <TabBtn active={mainTab === 'news'} onClick={() => setMainTab('news')} text={`📢 アプデ (${newsList.length})`} />
@@ -588,6 +614,41 @@ export default function IPATPage() {
                         </tr>
                       </tbody>
                     </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 🔨 新設: セリ市（プレイヤー市場 ＆ 運営公式セレクトセール） */}
+            {mainTab === 'auction' && (
+              <div>
+                <h3 style={{ margin: '0 0 16px 0', color: '#d97706' }}>🔨 競走馬 セリ市・オークション会場</h3>
+                {auctions.length === 0 ? (
+                  <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                    現在出品中の競走馬はありません。
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                    {auctions.map((a) => (
+                      <div key={a.id} style={{ backgroundColor: a.is_official ? '#fefce8' : '#f8fafc', padding: '20px', borderRadius: '12px', border: `2px solid ${a.is_official ? '#eab308' : '#cbd5e1'}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#d97706' }}>🐎 {a.horse_name}</span>
+                          {a.is_official && <span style={{ backgroundColor: '#dc2626', color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '10px' }}>👑 運営公式</span>}
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '16px' }}>
+                          <div>出品者: <strong>{a.seller_name}</strong></div>
+                          <div>現在最高額: <strong style={{ color: '#16a34a', fontSize: '16px' }}>{(a.current_bid || 0).toLocaleString()} G</strong></div>
+                          <div>最高額提示者: <strong>{a.highest_bidder}</strong> 様</div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input type="number" step="100000" min={a.current_bid + 100000} value={bidAmountInput} onChange={e => setBidAmountInput(Number(e.target.value))} style={inputStyle} />
+                          <button onClick={() => handlePlaceBid(a.id, a.current_bid)} style={{ padding: '10px 16px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            入札 🔨
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
