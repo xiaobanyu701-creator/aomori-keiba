@@ -8,7 +8,7 @@ export default function SuperAdminConsole() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
 
-  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'stats' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit'>('users');
+  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit'>('users');
 
   const [races, setRaces] = useState<any[]>([]);
   const [selectedRaceNo, setSelectedRaceNo] = useState<number>(1);
@@ -54,12 +54,6 @@ export default function SuperAdminConsole() {
   const [firstHorse, setFirstHorse] = useState('');
   const [secondHorse, setSecondHorse] = useState('');
   const [thirdHorse, setThirdHorse] = useState('');
-
-  // 生産確率コントロール用
-  const [probSS, setProbSS] = useState(5);
-  const [probS, setProbS] = useState(15);
-  const [probA, setProbA] = useState(20);
-  const [probB, setProbB] = useState(30);
 
   useEffect(() => { 
     if (isAuthenticated) { 
@@ -328,12 +322,6 @@ export default function SuperAdminConsole() {
     fetchRaces(); fetchUsers(); fetchHorseMasters();
   };
 
-  const handleSaveBreedingProbs = () => {
-    const probConfig = { SS: probSS, S: probS, A: probA, B: probB, C: 100 - (probSS + probS + probA + probB) };
-    localStorage.setItem('breeding_probs', JSON.stringify(probConfig));
-    alert('🎲 ガチャ生産の出現確率設定を保存しました！');
-  };
-
   const handleAdminLogin = (e: React.FormEvent) => { 
     e.preventDefault(); 
     if (pinInput === '0302') setIsAuthenticated(true); 
@@ -371,7 +359,6 @@ export default function SuperAdminConsole() {
           <SideButton active={adminTab === 'breed_edit'} onClick={() => setAdminTab('breed_edit')} icon="🧬" text="生産馬 個別確認・編集" />
           <SideButton active={adminTab === 'owner_assign'} onClick={() => setAdminTab('owner_assign')} icon="🤝" text="馬主＆馬 紐づけ管理" />
           <SideButton active={adminTab === 'horse_masters'} onClick={() => setAdminTab('horse_masters')} icon="🐎" text="現役競走馬マスター" />
-          <SideButton active={adminTab === 'stats'} onClick={() => setAdminTab('stats')} icon="📊" text="売上・インフレ率グラフ" />
 
           <div style={{ fontSize: '12px', color: '#93c5fd', fontWeight: 'bold', padding: '0 8px', marginTop: '24px' }}>レース管理 (1〜12R)</div>
           <SideButton active={adminTab === 'race'} onClick={() => setAdminTab('race')} icon="🛠️" text="レース条件設定 / 締切" />
@@ -407,7 +394,7 @@ export default function SuperAdminConsole() {
 
         <div style={{ maxWidth: '1000px' }}>
 
-          {/* 🧬 TAB: 生産馬 個別確認・編集（オンラインDBリアルタイム連携） */}
+          {/* 🧬 TAB: 生産馬 個別確認・編集 */}
           {adminTab === 'breed_edit' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
               <h2 style={{ margin: '0 0 16px 0', color: '#16a34a', fontSize: '20px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
