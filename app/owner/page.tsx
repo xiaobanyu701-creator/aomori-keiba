@@ -9,22 +9,26 @@ export default function OwnerPage() {
   const [discordInput, setDiscordInput] = useState('');
   const [pinInput, setPinInput] = useState('');
 
-  const [activeTab, setActiveTab] = useState<'my_horses' | 'breed' | 'jockey'>('my_horses');
+  // タブ管理（2歳自家生産馬 / 管理者登録馬 / ガチャ / 騎手申請）
+  const [activeTab, setActiveTab] = useState<'my_2yo' | 'all_horses' | 'breed' | 'jockey'>('my_2yo');
+  const [ageFilter, setAgeFilter] = useState<number>(2);
 
-  const [myHorses, setMyHorses] = useState<any[]>([]);
+  const [my2yoHorses, setMy2yoHorses] = useState<any[]>([]);
+  const [adminHorses, setAdminHorses] = useState<any[]>([]);
   const [jockeyList, setJockeyList] = useState<any[]>([]);
 
   const [newHorseName, setNewHorseName] = useState('');
-  const [selectedHorseId, setSelectedHorseId] = useState('');
+  const [selectedHorseName, setSelectedHorseName] = useState('');
   const [selectedJockey, setSelectedJockey] = useState('');
 
   useEffect(() => {
     fetchJockeys();
+    fetchAdminHorses();
   }, []);
 
   useEffect(() => {
     if (currentUser) {
-      fetchMyHorses();
+      loadMy2yoHorses();
     }
   }, [currentUser]);
 
@@ -36,15 +40,20 @@ export default function OwnerPage() {
     }
   };
 
-  const fetchMyHorses = async () => {
-    if (!currentUser) return;
+  // 管理者が登録した2〜8歳馬の一覧を取得
+  const fetchAdminHorses = async () => {
     const { data } = await supabase.from('horse_masters').select('*');
     if (data) {
-      setMyHorses([...data].reverse());
-      if (data.length > 0 && !selectedHorseId) {
-        setSelectedHorseId(data[0].id);
-      }
+      setAdminHorses(data);
     }
+  };
+
+  // 🔒 自分が生産した2歳馬（端末ローカル安全保存）を読み込み
+  const loadMy2yoHorses = () => {
+    if (!currentUser) return;
+    const storageKey = `my_2yo_horses_${currentUser.discord_name}`;
+    const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    setMy2yoHorses(saved);
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -74,13 +83,13 @@ export default function OwnerPage() {
     }
   };
 
-  // 🎲 10万円 一発ランダム生産（エラーを物理的にゼロにする確定処理）
+  // 🎲 10万円 2歳馬ガチャ（絶対重複エラーが出ない自分専用登録）
   const handleBreedGacha = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHorseName.trim()) return alert('馬名を入力してください');
     if ((currentUser.balance || 0) < 100000) return alert('資金が足りません（100,000G必要です）');
 
-    // 素質ランダム判定
+    // 素質判定
     const rand = Math.random();
     let rank = 'C';
     if (rand < 0.05) rank = 'SS';
@@ -88,49 +97,71 @@ export default function OwnerPage() {
     else if (rand < 0.40) rank = 'A';
     else if (rand < 0.70) rank = 'B';
 
-    // DBには絶対に存在する「name」のみをインサート（これで400エラーは100%回避）
-    const { error } = await supabase
-      .from('horse_masters')
-      .insert([{ name: newHorseName }]);
+    const newHorse = {
+      id: Date.now().toString(),
+      name: newHorseName,
+      age: 2,
+      rank: rank,
+      owner: currentUser.discord_name,
+      createdAt: new Date().toLocaleDateString()
+    };
 
-    if (error) {
-      alert('生産エラー: ' + error.message);
-      return;
-    }
+    // 🔒 自分の端末専用保存リストへ書き込み（他人の馬と混ざりません）
+    const storageKey = `my_2yo_horses_${currentUser.discord_name}`;
+    const currentList = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    const updatedList = [newHorse, ...currentList];
+    localStorage.setItem(storageKey, JSON.stringify(updatedList));
 
     // 残高減額
     const newBal = (currentUser.balance || 0) - 100000;
     await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
 
+    // 管理者へ「出走登録依頼」をお問い合わせへ自動送信（管理者がレースに出せるように連携）
+    await supabase.from('inquiries').insert([
+      {
+        user_id: currentUser.id,
+        discord_name: currentUser.discord_name,
+        title: `【新馬生産完了】 ${newHorseName} (2歳/素質:${rank})`,
+        content: `馬主: ${currentUser.discord_name}\n馬名: ${newHorseName}\n年齢: 2歳\n素質ランク: ${rank}`,
+      }
+    ]);
+
     setCurrentUser({ ...currentUser, balance: newBal });
     setNewHorseName('');
-    alert(`🎉 2歳仔馬「${newHorseName}」が誕生しました！\n【素質: ${rank}ランク】\n所有馬リストに追加されました！`);
-    fetchMyHorses();
-    setActiveTab('my_horses');
+    alert(`🎉 2歳仔馬「${newHorseName}」が誕生しました！\n【素質: ${rank}ランク】\n「自分の2歳所有馬」タブへ自動反映されました！`);
+    setMy2yoHorses(updatedList);
+    setActiveTab('my_2yo');
   };
 
-  const handleRetireRequest = async (horseId: string, horseName: string) => {
+  const handleRetireRequest = async (horseName: string) => {
     if (!confirm(`「${horseName}」の引退を管理者に申請しますか？`)) return;
-    alert(`📨 「${horseName}」の引退申請を行いました。`);
-  };
-
-  const handleUpdateJockey = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedHorseId) return alert('馬を選択してください');
-
-    const targetHorse = myHorses.find((h) => h.id === selectedHorseId);
-    if (!targetHorse) return;
 
     await supabase.from('inquiries').insert([
       {
         user_id: currentUser.id,
         discord_name: currentUser.discord_name,
-        title: `【騎手変更申請】 ${targetHorse.name}`,
-        content: `対象馬: ${targetHorse.name}\n希望騎手: ${selectedJockey}`,
+        title: `【引退申請】 ${horseName}`,
+        content: `馬主 ${currentUser.discord_name} 様より「${horseName}」の引退申請がありました。`,
       },
     ]);
 
-    alert(`🏇 「${targetHorse.name}」の主戦騎手を【${selectedJockey}】へ変更する申請を送信しました！`);
+    alert(`📨 「${horseName}」の引退申請を管理者に送信しました。`);
+  };
+
+  const handleUpdateJockey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedHorseName) return alert('馬を選択してください');
+
+    await supabase.from('inquiries').insert([
+      {
+        user_id: currentUser.id,
+        discord_name: currentUser.discord_name,
+        title: `【騎手変更申請】 ${selectedHorseName}`,
+        content: `対象馬: ${selectedHorseName}\n希望騎手: ${selectedJockey}`,
+      },
+    ]);
+
+    alert(`🏇 「${selectedHorseName}」の主戦騎手を【${selectedJockey}】へ変更する申請を送信しました！`);
   };
 
   return (
@@ -197,39 +228,43 @@ export default function OwnerPage() {
           </div>
         ) : (
           <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
+            {/* メインタブ */}
             <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px' }}>
-              <TabBtn active={activeTab === 'my_horses'} onClick={() => setActiveTab('my_horses')} text="📋 自分の所有馬一覧" />
-              <TabBtn active={activeTab === 'breed'} onClick={() => setActiveTab('breed')} text="🎲 10万円 仔馬生産" />
+              <TabBtn active={activeTab === 'my_2yo'} onClick={() => setActiveTab('my_2yo')} text="🐎 自分の2歳所有馬" />
+              <TabBtn active={activeTab === 'all_horses'} onClick={() => setActiveTab('all_horses')} text="📋 年齢別 競走馬名鑑 (2〜8歳)" />
+              <TabBtn active={activeTab === 'breed'} onClick={() => setActiveTab('breed')} text="🎲 10万円 2歳仔馬生産" />
               <TabBtn active={activeTab === 'jockey'} onClick={() => setActiveTab('jockey')} text="🏇 騎手変更申請" />
             </div>
 
-            {/* TAB 1: 自分の所有馬一覧 */}
-            {activeTab === 'my_horses' && (
+            {/* TAB 1: 自分の2歳所有馬（完全分離） */}
+            {activeTab === 'my_2yo' && (
               <div>
-                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🐎 自分の所有馬一覧 ({myHorses.length}頭)</h3>
-                {myHorses.length === 0 ? (
+                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🐎 自分の2歳所有馬一覧 ({my2yoHorses.length}頭)</h3>
+                {my2yoHorses.length === 0 ? (
                   <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
-                    まだ所有馬がいません。「10万円 仔馬生産」から生産してください。
+                    まだ生産した2歳馬がいません。「10万円 2歳仔馬生産」からガチャを回してください。
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-                    {myHorses.map((h) => (
+                    {my2yoHorses.map((h) => (
                       <div key={h.id} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                           <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#16a34a' }}>
                             🐎 {h.name}
                           </span>
                           <span style={{ fontSize: '11px', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px', color: '#fff', backgroundColor: '#16a34a' }}>
-                            現役 (2歳馬)
+                            2歳馬
                           </span>
                         </div>
 
                         <div style={{ fontSize: '13px', color: '#64748b', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <div>馬主: {currentUser.discord_name}</div>
+                          <div>素質ランク: <strong style={{ color: '#dc2626' }}>【{h.rank}】</strong></div>
+                          <div style={{ fontSize: '11px', color: '#94a3b8' }}>生産日: {h.createdAt}</div>
                         </div>
 
                         <button
-                          onClick={() => handleRetireRequest(h.id, h.name)}
+                          onClick={() => handleRetireRequest(h.name)}
                           style={{ marginTop: '12px', width: '100%', backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
                         >
                           引退を申請する 🛑
@@ -241,12 +276,51 @@ export default function OwnerPage() {
               </div>
             )}
 
-            {/* TAB 2: 生産ガチャ */}
+            {/* TAB 2: 年齢別 競走馬名鑑 (2〜8歳) */}
+            {activeTab === 'all_horses' && (
+              <div>
+                <h3 style={{ margin: '0 0 12px 0', color: '#1e3a8a' }}>📋 年齢別 登録競走馬一覧</h3>
+                {/* 年齢切り替えボタン (2〜8歳) */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+                  {[2, 3, 4, 5, 6, 7, 8].map((age) => (
+                    <button
+                      key={age}
+                      onClick={() => setAgeFilter(age)}
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        backgroundColor: ageFilter === age ? '#1e3a8a' : '#f8fafc',
+                        color: ageFilter === age ? '#fff' : '#475569',
+                      }}
+                    >
+                      {age}歳馬
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
+                  {adminHorses
+                    .filter((h) => (h.age || 3) === ageFilter)
+                    .map((h) => (
+                      <div key={h.id} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '16px' }}>🐎 {h.name}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>年齢: {ageFilter}歳</div>
+                        <div style={{ fontSize: '12px', color: '#2563eb', marginTop: '2px' }}>馬主: {h.owner_name || '運営管理'}</div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: 2歳仔馬生産 */}
             {activeTab === 'breed' && (
               <div style={{ maxWidth: '500px' }}>
-                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🎲 10万円 仔馬（2歳）生産ガチャ</h3>
+                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🎲 10万円 2歳仔馬生産ガチャ</h3>
                 <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
-                  100,000 G で新しい2歳仔馬を生産します。生産された馬はすぐにあなたの所有馬へ自動追加されます！
+                  100,000 G で新しい2歳仔馬を生産します。自分専用の「2歳所有馬」タブに即座に保存されます！
                 </p>
                 <form onSubmit={handleBreedGacha} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div>
@@ -254,23 +328,24 @@ export default function OwnerPage() {
                     <input type="text" placeholder="例: ツガルキング" value={newHorseName} onChange={(e) => setNewHorseName(e.target.value)} style={inputStyle} required />
                   </div>
                   <button type="submit" style={{ padding: '16px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-                    100,000 G で2歳馬を誕生・自動登録 🎲
+                    100,000 G で2歳馬を誕生・自動反映 🎲
                   </button>
                 </form>
               </div>
             )}
 
-            {/* TAB 3: 騎手変更 */}
+            {/* TAB 4: 騎手変更申請 */}
             {activeTab === 'jockey' && (
               <div style={{ maxWidth: '500px' }}>
                 <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🏇 主戦騎手の指定・変更申請</h3>
                 <form onSubmit={handleUpdateJockey} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>愛馬を選択</label>
-                    <select value={selectedHorseId} onChange={(e) => setSelectedHorseId(e.target.value)} style={inputStyle}>
-                      {myHorses.map((h) => (
-                        <option key={h.id} value={h.id}>
-                          🐎 {h.name}
+                    <label style={labelStyle}>愛馬（自分の2歳馬）を選択</label>
+                    <select value={selectedHorseName} onChange={(e) => setSelectedHorseName(e.target.value)} style={inputStyle}>
+                      <option value="">馬を選択してください</option>
+                      {my2yoHorses.map((h) => (
+                        <option key={h.id} value={h.name}>
+                          🐎 {h.name} (2歳/素質:{h.rank})
                         </option>
                       ))}
                     </select>
