@@ -49,10 +49,6 @@ export default function SuperAdminConsole() {
   const [newHorseName, setNewHorseName] = useState(''); 
   const [newHorseAge, setNewHorseAge] = useState(2);
   const [newJockey, setNewJockey] = useState('');
-  const [newWeight, setNewWeight] = useState('480kg');
-  const [newPopularity, setNewPopularity] = useState(1);
-  const [newMark, setNewMark] = useState('◎');
-  const [newConditionMark, setNewConditionMark] = useState('S');
 
   // 着順確定用
   const [firstHorse, setFirstHorse] = useState('');
@@ -99,17 +95,21 @@ export default function SuperAdminConsole() {
     }
   }, [selectedUserId, users]);
 
-  // 🧬 選択されたユーザーの生産馬をロード
+  // 🧬 選択されたユーザーの生産馬をDBからオンライン取得
   useEffect(() => {
     if (breedEditOwnerName) {
       loadOwnerBredHorses(breedEditOwnerName);
     }
   }, [breedEditOwnerName]);
 
-  const loadOwnerBredHorses = (ownerName: string) => {
-    const storageKey = `my_2yo_horses_${ownerName}`;
-    const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
-    setUserBredHorses(saved);
+  const loadOwnerBredHorses = async (ownerName: string) => {
+    const { data } = await supabase
+      .from('horse_masters')
+      .select('*')
+      .eq('owner_name', ownerName);
+    if (data) {
+      setUserBredHorses(data);
+    }
   };
 
   const fetchRaces = async () => {
@@ -156,26 +156,17 @@ export default function SuperAdminConsole() {
     }
   };
 
-  // 🧬 生産馬パラメータの保存・変更
-  const handleUpdateBredHorseDetail = (horseId: string, field: string, value: any) => {
-    const updated = userBredHorses.map(h => {
-      if (h.id === horseId) {
-        return { ...h, [field]: value };
-      }
-      return h;
-    });
-    setUserBredHorses(updated);
-    const storageKey = `my_2yo_horses_${breedEditOwnerName}`;
-    localStorage.setItem(storageKey, JSON.stringify(updated));
+  // 🧬 オンラインDB上の馬のパラメータを上書き保存
+  const handleUpdateBredHorseDetail = async (horseId: string, field: string, value: any) => {
+    await supabase.from('horse_masters').update({ [field]: value }).eq('id', horseId);
+    loadOwnerBredHorses(breedEditOwnerName);
   };
 
   // 🧬 生産馬の削除
-  const handleDeleteBredHorse = (horseId: string, horseName: string) => {
-    if (!confirm(`「${horseName}」をこの馬主の生産所有リストから削除しますか？`)) return;
-    const updated = userBredHorses.filter(h => h.id !== horseId);
-    setUserBredHorses(updated);
-    const storageKey = `my_2yo_horses_${breedEditOwnerName}`;
-    localStorage.setItem(storageKey, JSON.stringify(updated));
+  const handleDeleteBredHorse = async (horseId: string, horseName: string) => {
+    if (!confirm(`「${horseName}」を完全に削除しますか？`)) return;
+    await supabase.from('horse_masters').delete().eq('id', horseId);
+    loadOwnerBredHorses(breedEditOwnerName);
     alert(`🗑️ 「${horseName}」を削除しました。`);
   };
 
@@ -279,7 +270,7 @@ export default function SuperAdminConsole() {
     if (!currentRace || !newHorseName) return alert('馬名を選択してください');
 
     await supabase.from('horses').insert([{
-      race_id: currentRace.id, horse_number: newHorseNumber, name: newHorseName, age: newHorseAge, jockey: newJockey, weight: newWeight, popularity: newPopularity, mark: newMark, condition_mark: newConditionMark
+      race_id: currentRace.id, horse_number: newHorseNumber, name: newHorseName, age: newHorseAge, jockey: newJockey
     }]);
     await supabase.from('horse_masters').update({ status: `出走(${selectedRaceNo}R)` }).eq('name', newHorseName);
     fetchHorses(currentRace.id); fetchHorseMasters(); alert(`🎉 出走登録しました！`);
@@ -364,15 +355,6 @@ export default function SuperAdminConsole() {
 
   const activeHorseMasters = horseMasterList.filter(h => h.status !== '引退');
 
-  const allBets = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('all_user_bets') || '[]') : [];
-  const raceStats = Array.from({ length: 12 }, (_, i) => {
-    const raceNo = i + 1;
-    const rBets = allBets.filter((b: any) => Number(b.race_number) === raceNo);
-    const totalSales = rBets.reduce((sum: number, b: any) => sum + (b.amount || 0), 0);
-    const inflationRate = totalSales > 0 ? ((totalSales / 100000) * 1.5).toFixed(1) : '1.0';
-    return { raceNo, totalSales, inflationRate: Number(inflationRate) };
-  });
-
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f1f5f9', fontFamily: 'sans-serif', color: '#0f172a' }}>
       
@@ -425,17 +407,13 @@ export default function SuperAdminConsole() {
 
         <div style={{ maxWidth: '1000px' }}>
 
-          {/* 🧬 TAB: 生産馬 個別確認・編集（新設） */}
+          {/* 🧬 TAB: 生産馬 個別確認・編集（オンラインDBリアルタイム連携） */}
           {adminTab === 'breed_edit' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
               <h2 style={{ margin: '0 0 16px 0', color: '#16a34a', fontSize: '20px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 🧬 ユーザー別 生産馬一覧 ＆ パラメータ直接編集
               </h2>
-              <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '24px' }}>
-                馬主（ユーザー）を選択して、そのプレイヤーがガチャで生産した愛馬の「素質ランク」や「各ステータス」を自由に改造・編集できます。
-              </p>
 
-              {/* ユーザー選択 */}
               <div style={{ marginBottom: '24px' }}>
                 <label style={labelStyle}>① 確認・編集したい馬主（ユーザー）を選択</label>
                 <select 
@@ -451,7 +429,6 @@ export default function SuperAdminConsole() {
                 </select>
               </div>
 
-              {/* 生産馬リスト編集フォーム */}
               <h3 style={{ margin: '20px 0 12px 0', color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
                 🐎 【{breedEditOwnerName}】 様の生産馬 ({userBredHorses.length}頭)
               </h3>
@@ -703,35 +680,6 @@ export default function SuperAdminConsole() {
                 <div><label style={{ fontSize: '13px', color: '#ca8a04', fontWeight: 'bold' }}>🥉 3着</label><select value={thirdHorse} onChange={e=>setThirdHorse(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
               </div>
               <button onClick={handleSettleFullRace} style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '16px', fontSize: '18px', fontWeight: 'bold', borderRadius: '10px', cursor: 'pointer' }}>🏁 結果確定・配当金＆馬主10%手当自動振込 💰</button>
-            </div>
-          )}
-
-          {/* 📊 TAB: 売上・インフレ率グラフ */}
-          {adminTab === 'stats' && (
-            <div style={{ backgroundColor: '#ffffff', padding: '28px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '20px' }}>📊 レース別 インフレ率 ＆ 売上分析グラフ</h3>
-              <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {raceStats.map(s => (
-                  <div key={s.raceNo} style={{ display: 'flex', alignItems: 'center', gap: '16px', backgroundColor: '#f8fafc', padding: '12px 16px', borderRadius: '8px' }}>
-                    <div style={{ width: '50px', fontWeight: 'bold', color: '#1e3a8a' }}>{s.raceNo}R</div>
-                    <div style={{ flex: 1, backgroundColor: '#e2e8f0', borderRadius: '6px', height: '20px', overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.min(100, (s.totalSales / 500000) * 100)}%`, backgroundColor: '#2563eb', height: '100%' }} />
-                    </div>
-                    <div style={{ width: '150px', fontSize: '13px', fontWeight: 'bold', textAlign: 'right' }}>売上: {s.totalSales.toLocaleString()} G</div>
-                    <div style={{ width: '120px', fontSize: '13px', fontWeight: 'bold', color: '#dc2626', textAlign: 'right' }}>インフレ率: {s.inflationRate}x</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ marginTop: '36px', borderTop: '2px solid #f1f5f9', paddingTop: '24px' }}>
-                <h4 style={{ color: '#16a34a', margin: '0 0 12px 0' }}>🎲 ダビスタ風 生産ガチャ確率 手動コントロール設定</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px' }}>
-                  <div><label style={labelStyle}>SSランク (%)</label><input type="number" value={probSS} onChange={e=>setProbSS(Number(e.target.value))} style={inputStyle} /></div>
-                  <div><label style={labelStyle}>Sランク (%)</label><input type="number" value={probS} onChange={e=>setProbS(Number(e.target.value))} style={inputStyle} /></div>
-                  <div><label style={labelStyle}>Aランク (%)</label><input type="number" value={probA} onChange={e=>setProbA(Number(e.target.value))} style={inputStyle} /></div>
-                  <div><label style={labelStyle}>Bランク (%)</label><input type="number" value={probB} onChange={e=>setProbB(Number(e.target.value))} style={inputStyle} /></div>
-                </div>
-                <button onClick={handleSaveBreedingProbs} style={{ marginTop: '16px', backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '12px 24px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>確率設定を保存 ⚙️</button>
-              </div>
             </div>
           )}
 

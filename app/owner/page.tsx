@@ -11,8 +11,7 @@ export default function OwnerPage() {
 
   const [activeTab, setActiveTab] = useState<'my_horses' | 'breed' | 'jockey'>('my_horses');
 
-  const [myDbHorses, setMyDbHorses] = useState<any[]>([]);
-  const [my2yoHorses, setMy2yoHorses] = useState<any[]>([]);
+  const [myHorses, setMyHorses] = useState<any[]>([]);
   const [jockeyList, setJockeyList] = useState<any[]>([]);
 
   const [newHorseName, setNewHorseName] = useState('');
@@ -37,21 +36,21 @@ export default function OwnerPage() {
     }
   };
 
-  // 管理者登録馬 ＆ 自家生産馬の両方を安全ロード
+  // 🌐 SupabaseのDBからオンライン同期された自分の所有馬を取得
   const loadMyHorses = async () => {
     if (!currentUser) return;
 
-    // 1. SupabaseのDBから管理者が自分に紐づけた馬を取得
-    const { data: dbData } = await supabase.from('horse_masters').select('*');
-    if (dbData) {
-      const dbFiltered = dbData.filter((h) => h.owner_name === currentUser.discord_name);
-      setMyDbHorses(dbFiltered);
-    }
+    const { data } = await supabase
+      .from('horse_masters')
+      .select('*')
+      .eq('owner_name', currentUser.discord_name);
 
-    // 2. 自家生産の2歳馬（端末ローカル）
-    const storageKey = `my_2yo_horses_${currentUser.discord_name}`;
-    const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
-    setMy2yoHorses(saved);
+    if (data) {
+      setMyHorses([...data].reverse());
+      if (data.length > 0 && !selectedHorseName) {
+        setSelectedHorseName(data[0].name);
+      }
+    }
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -81,7 +80,7 @@ export default function OwnerPage() {
     }
   };
 
-  // 🎲 10万円 ダビスタ風仔馬生産
+  // 🎲 10万円 ダビスタ風仔馬生産 (全端末＆管理者オンライン同期版)
   const handleBreedGacha = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHorseName.trim()) return alert('馬名を入力してください');
@@ -106,30 +105,24 @@ export default function OwnerPage() {
 
     const [speed, stamina, guts, temper] = paramMap[rank];
 
-    // 管理者競走馬マスターにも自動送信
-    await supabase.from('horse_masters').insert([{
-      name: newHorseName,
-      owner_name: currentUser.discord_name,
-      status: '現役'
-    }]);
+    // 🌐 オンラインDB (horse_masters) へ直接保存して管理者画面と一発同期
+    const { error } = await supabase.from('horse_masters').insert([
+      {
+        name: newHorseName,
+        owner_name: currentUser.discord_name,
+        rank: rank,
+        speed: speed,
+        stamina: stamina,
+        guts: guts,
+        temper: temper,
+        status: '現役',
+        age: 2,
+      },
+    ]);
 
-    const newHorse = {
-      id: Date.now().toString(),
-      name: newHorseName,
-      age: 2,
-      rank: rank,
-      speed,
-      stamina,
-      guts,
-      temper,
-      owner: currentUser.discord_name,
-      createdAt: new Date().toLocaleDateString()
-    };
-
-    const storageKey = `my_2yo_horses_${currentUser.discord_name}`;
-    const currentList = JSON.parse(localStorage.getItem(storageKey) || '[]');
-    const updatedList = [newHorse, ...currentList];
-    localStorage.setItem(storageKey, JSON.stringify(updatedList));
+    if (error) {
+      return alert('生産エラー: ' + error.message);
+    }
 
     const newBal = (currentUser.balance || 0) - 100000;
     await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
@@ -141,7 +134,6 @@ export default function OwnerPage() {
     setActiveTab('my_horses');
   };
 
-  // 引退申請
   const handleRetireRequest = async (horseId: string, horseName: string) => {
     if (!confirm(`「${horseName}」の引退を管理者に申請しますか？`)) return;
 
@@ -165,8 +157,6 @@ export default function OwnerPage() {
 
     alert(`🏇 「${selectedHorseName}」の主戦騎手を【${selectedJockey}】様へ変更申請しました！`);
   };
-
-  const allMyHorses = [...myDbHorses, ...my2yoHorses];
 
   return (
     <div style={{ backgroundColor: '#f1f5f9', minHeight: '100vh', fontFamily: 'sans-serif', color: '#0f172a' }}>
@@ -242,20 +232,20 @@ export default function OwnerPage() {
             {/* TAB 1: 自分の所有馬一覧 */}
             {activeTab === 'my_horses' && (
               <div>
-                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🐎 自分の所有馬一覧 ({allMyHorses.length}頭)</h3>
-                {allMyHorses.length === 0 ? (
+                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🐎 自分の所有馬一覧 ({myHorses.length}頭)</h3>
+                {myHorses.length === 0 ? (
                   <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
                     まだ所有馬がいません。「10万円 仔馬生産」で生産するか、管理者の割り当てをお待ちください。
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-                    {allMyHorses.map((h, i) => {
+                    {myHorses.map((h) => {
                       const isRetired = h.status === '引退';
                       const isPendingRetire = h.status === '引退申請中';
                       const isRunning = h.status?.includes('出走');
 
                       return (
-                        <div key={h.id || i} style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                        <div key={h.id} style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                             <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#16a34a' }}>🐎 {h.name}</span>
                             <span style={{ fontSize: '11px', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px', color: '#fff', backgroundColor: isRetired ? '#64748b' : isPendingRetire ? '#eab308' : isRunning ? '#dc2626' : '#16a34a' }}>
@@ -265,11 +255,11 @@ export default function OwnerPage() {
 
                           <div style={{ fontSize: '13px', marginTop: '10px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <div>馬主: <strong>{currentUser.discord_name}</strong></div>
-                            {h.rank && <div>総合素質: <strong style={{ color: '#dc2626' }}>【{h.rank}ランク】</strong></div>}
-                            {h.speed && <div>スピード: {h.speed} / スタミナ: {h.stamina} / 根性: {h.guts}</div>}
+                            <div>総合素質: <strong style={{ color: '#dc2626' }}>【{h.rank || 'B'}ランク】</strong></div>
+                            <div>スピード: {h.speed || 'B'} / スタミナ: {h.stamina || 'B'} / 根性: {h.guts || 'B'}</div>
                           </div>
 
-                          {!isRetired && !isPendingRetire && h.id && (
+                          {!isRetired && !isPendingRetire && (
                             <button
                               onClick={() => handleRetireRequest(h.id, h.name)}
                               style={{ marginTop: '12px', width: '100%', backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
@@ -290,7 +280,7 @@ export default function OwnerPage() {
               <div style={{ maxWidth: '500px' }}>
                 <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🎲 10万円 仔馬（2歳）生産ガチャ</h3>
                 <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
-                  100,000 G で新しい2歳仔馬を生産します。ダビスタ風の能力パラメータ（スピード・スタミナ・根性・気性）が決定されます！
+                  100,000 G で新しい2歳仔馬を生産します。オンライン保存され管理者画面からもリアルタイムで確認・編集できます！
                 </p>
                 <form onSubmit={handleBreedGacha} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div>
@@ -315,8 +305,8 @@ export default function OwnerPage() {
                   <div>
                     <label style={labelStyle}>愛馬を選択</label>
                     <select value={selectedHorseName} onChange={(e) => setSelectedHorseName(e.target.value)} style={inputStyle}>
-                      {allMyHorses.map((h, i) => (
-                        <option key={h.id || i} value={h.name}>
+                      {myHorses.map((h) => (
+                        <option key={h.id} value={h.name}>
                           🐎 {h.name}
                         </option>
                       ))}

@@ -57,7 +57,6 @@ export default function IPATPage() {
     if (hData) {
       const sorted = [...hData].sort((a, b) => (a.horse_number || 0) - (b.horse_number || 0));
 
-      // Supabaseの全ユーザーの購入データを合算
       const totalAmount = bData ? bData.reduce((sum, b) => sum + (b.amount || 0), 0) : 0;
 
       const dynamicHorses = sorted.map((h) => {
@@ -117,7 +116,7 @@ export default function IPATPage() {
     }
   };
 
-  // 🎫 馬券購入処理（全端末完全同期オンライン保存）
+  // 🎫 馬券購入処理
   const handleBuyBet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return alert('ログインしてください');
@@ -138,7 +137,6 @@ export default function IPATPage() {
       selection = `${selectedHorse1}-${selectedHorse2}-${selectedHorse3}`;
     }
 
-    // 🌐 Supabaseへ直接保存して全端末でオッズを同期
     const { error } = await supabase.from('bets').insert([
       {
         user_id: currentUser.id,
@@ -153,7 +151,6 @@ export default function IPATPage() {
       return alert('購入エラー: ' + error.message);
     }
 
-    // 残高減額
     const newBal = (currentUser.balance || 0) - betAmount;
     await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
 
@@ -289,7 +286,7 @@ export default function IPATPage() {
                     <div>
                       <label style={labelStyle}>券種を選択</label>
                       <select value={betType} onChange={(e) => setBetType(e.target.value)} style={inputStyle}>
-                        {['単勝', '複勝', '馬単', '馬連', 'ワイド', '3連複', '3连単'].map((t) => (
+                        {['単勝', '複勝', '馬単', '馬連', 'ワイド', '3連複', '3連単'].map((t) => (
                           <option key={t} value={t}>
                             {t}
                           </option>
