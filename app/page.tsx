@@ -39,17 +39,16 @@ export default function IPATPage() {
   }, [selectedRaceNo, races]);
 
   useEffect(() => {
-    if (currentUser && currentRace) {
+    if (currentUser) {
       fetchMyBets();
     }
-  }, [currentUser, currentRace]);
+  }, [currentUser, selectedRaceNo]);
 
   const fetchRaces = async () => {
     const { data } = await supabase.from('races').select('*');
     if (data) setRaces([...data].sort((a, b) => (a.race_number || 0) - (b.race_number || 0)));
   };
 
-  // 🌐 Supabase(オンライン)から全端末共通の動的オッズをリアルタイム計算
   const fetchHorsesAndOnlineOdds = async (raceId: string) => {
     const { data: hData } = await supabase.from('horses').select('*').eq('race_id', raceId);
     const { data: bData } = await supabase.from('bets').select('*').eq('race_id', String(raceId));
@@ -65,7 +64,7 @@ export default function IPATPage() {
           const horseTotal = horseBets.reduce((sum, b) => sum + Number(b.amount || 0), 0);
 
           if (horseTotal > 0) {
-            const pool = totalAmount * 0.8; // 控除率20%
+            const pool = totalAmount * 0.8;
             const odds = pool / horseTotal;
             calculatedOdds = Math.max(1.1, Number(odds.toFixed(1)));
           }
@@ -83,7 +82,7 @@ export default function IPATPage() {
   };
 
   const fetchMyBets = async () => {
-    if (!currentUser || !currentRace) return;
+    if (!currentUser) return;
     const { data } = await supabase.from('bets').select('*').eq('user_id', String(currentUser.id));
     if (data) setMyBets([...data].reverse());
   };
@@ -115,7 +114,6 @@ export default function IPATPage() {
     }
   };
 
-  // 🎫 馬券購入処理（型不一致ゼロ化・完全安全版）
   const handleBuyBet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return alert('ログインしてください');
@@ -224,7 +222,7 @@ export default function IPATPage() {
         ) : (
           <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px' }}>
-              <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text="🎫 馬券投票（オッズ全端末同期）" />
+              <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text="🎫 馬券投票（オッズ自動連動）" />
               <TabBtn active={mainTab === 'history'} onClick={() => setMainTab('history')} text={`📋 馬券購入履歴 (${myBets.length}件)`} />
             </div>
 
@@ -355,7 +353,7 @@ export default function IPATPage() {
                   </div>
                 </form>
 
-                <h3 style={{ margin: '0 0 12px 0', color: '#1e3a8a' }}>📊 出走馬一覧 ＆ リアルタイムオッズ (全端末自動同期中)</h3>
+                <h3 style={{ margin: '0 0 12px 0', color: '#1e3a8a' }}>📊 出走馬一覧 ＆ リアルタイムオッズ</h3>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                   <thead>
                     <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0', color: '#475569', textAlign: 'left' }}>
@@ -387,6 +385,7 @@ export default function IPATPage() {
               </div>
             )}
 
+            {/* 📋 馬券履歴：🎯 的中・❌ 不的中がひと目でわかる判定画面 */}
             {mainTab === 'history' && (
               <div>
                 <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>📋 あなたの馬券購入履歴・的中一覧</h3>
@@ -396,24 +395,57 @@ export default function IPATPage() {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {myBets.map((b) => (
-                      <div key={b.id} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#1e3a8a' }}>
-                            🎫 【{b.bet_type}】 {b.selection}
-                          </div>
-                          <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                            購入額: {Number(b.amount).toLocaleString()} G
-                          </div>
-                        </div>
+                    {myBets.map((b) => {
+                      const isClaimed = b.is_claimed;
+                      const payout = Number(b.payout_amount || 0);
+                      const isWin = isClaimed && payout > 0;
+                      const isLose = isClaimed && payout === 0;
 
-                        <div>
-                          <span style={{ backgroundColor: '#3b82f6', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px' }}>
-                            ✅ 発行完了
-                          </span>
+                      return (
+                        <div
+                          key={b.id}
+                          style={{
+                            backgroundColor: isWin ? '#fefce8' : '#f8fafc',
+                            padding: '16px 20px',
+                            borderRadius: '12px',
+                            border: `2px solid ${isWin ? '#eab308' : isLose ? '#cbd5e1' : '#bfdbfe'}`,
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#1e3a8a' }}>
+                              🎫 【{b.bet_type}】 {b.selection}
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                              購入額: {Number(b.amount).toLocaleString()} G
+                            </div>
+                          </div>
+
+                          <div>
+                            {!isClaimed ? (
+                              <span style={{ backgroundColor: '#2563eb', color: '#fff', padding: '6px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px' }}>
+                                ⏳ レース結果確定待ち
+                              </span>
+                            ) : isWin ? (
+                              <div style={{ textAlign: 'right' }}>
+                                <span style={{ backgroundColor: '#16a34a', color: '#fff', padding: '4px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px' }}>
+                                  🎯 的中！
+                                </span>
+                                <div style={{ fontSize: '18px', fontWeight: '900', color: '#16a34a', marginTop: '4px' }}>
+                                  + {payout.toLocaleString()} G
+                                </div>
+                              </div>
+                            ) : (
+                              <span style={{ backgroundColor: '#94a3b8', color: '#fff', padding: '6px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px' }}>
+                                ❌ 不的中
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

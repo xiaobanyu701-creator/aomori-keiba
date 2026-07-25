@@ -50,10 +50,16 @@ export default function SuperAdminConsole() {
   const [newHorseAge, setNewHorseAge] = useState(2);
   const [newJockey, setNewJockey] = useState('');
 
-  // 着順確定用
-  const [firstHorse, setFirstHorse] = useState('');
-  const [secondHorse, setSecondHorse] = useState('');
-  const [thirdHorse, setThirdHorse] = useState('');
+  // 🏁 1着〜9着 着順確定用ステート
+  const [rank1, setRank1] = useState('');
+  const [rank2, setRank2] = useState('');
+  const [rank3, setRank3] = useState('');
+  const [rank4, setRank4] = useState('');
+  const [rank5, setRank5] = useState('');
+  const [rank6, setRank6] = useState('');
+  const [rank7, setRank7] = useState('');
+  const [rank8, setRank8] = useState('');
+  const [rank9, setRank9] = useState('');
 
   useEffect(() => { 
     if (isAuthenticated) { 
@@ -250,7 +256,6 @@ export default function SuperAdminConsole() {
     alert('保存しました！'); fetchRaces();
   };
 
-  // 🐴 出走馬追加 (400エラー安全リトライ処理)
   const handleAddHorse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentRace || !newHorseName) return alert('馬名を選択してください');
@@ -264,7 +269,6 @@ export default function SuperAdminConsole() {
     }]);
 
     if (error) {
-      // 安全な最小限データで再試行
       await supabase.from('horses').insert([{
         race_id: currentRace.id,
         horse_number: newHorseNumber,
@@ -299,11 +303,66 @@ export default function SuperAdminConsole() {
     fetchHorses(currentRace.id);
   };
 
+  // 🏆【完全自動配当振込＆手当還元ロジック】
   const handleSettleFullRace = async () => {
-    if (!currentRace || !firstHorse) return alert('1着を指定してください');
-    if (!confirm(`【${selectedRaceNo}R】の結果を確定して一括自動振込を行いますか？`)) return;
+    if (!currentRace || !rank1) return alert('最低限1着の馬を選択してください');
+    if (!confirm(`【${selectedRaceNo}R】の結果を確定し、的中者全員へ配当金を自動振込（残高加算）しますか？`)) return;
 
-    const winningHorseObj = horses.find(h => String(h.horse_number) === String(firstHorse));
+    // 1. レースの全購入馬券を取得
+    const { data: bets } = await supabase.from('bets').select('*').eq('race_id', String(currentRace.id));
+
+    if (bets && bets.length > 0) {
+      for (const bet of bets) {
+        let isWin = false;
+        let winOdds = 3.5;
+        const sel = String(bet.selection);
+
+        // 各券種の的中判定
+        if (bet.bet_type === '単勝' && sel === rank1) {
+          isWin = true; winOdds = 3.5;
+        } else if (bet.bet_type === '複勝' && [rank1, rank2, rank3].filter(Boolean).includes(sel)) {
+          isWin = true; winOdds = 1.8;
+        } else if (bet.bet_type === '馬単' && sel === `${rank1}-${rank2}`) {
+          isWin = true; winOdds = 15.0;
+        } else if (bet.bet_type === '馬連' && (sel === `${rank1}-${rank2}` || sel === `${rank2}-${rank1}`)) {
+          isWin = true; winOdds = 8.5;
+        } else if (bet.bet_type === 'ワイド') {
+          const pair = sel.split('-');
+          const top3 = [rank1, rank2, rank3].filter(Boolean);
+          if (pair.length === 2 && top3.includes(pair[0]) && top3.includes(pair[1])) {
+            isWin = true; winOdds = 3.2;
+          }
+        } else if (bet.bet_type === '3連複') {
+          const trio = sel.split('-');
+          const top3 = [rank1, rank2, rank3].filter(Boolean);
+          if (trio.length === 3 && trio.every(h => top3.includes(h))) {
+            isWin = true; winOdds = 22.0;
+          }
+        } else if (bet.bet_type === '3連単' && sel === `${rank1}-${rank2}-${rank3}`) {
+          isWin = true; winOdds = 65.0;
+        }
+
+        if (isWin) {
+          const payout = Math.floor(Number(bet.amount) * winOdds);
+
+          // 馬券ステータス更新
+          await supabase.from('bets').update({ payout_amount: payout, is_claimed: true }).eq('id', bet.id);
+
+          // 🎯 当たったユーザーの残高へ自動振込（加算）
+          const { data: userData } = await supabase.from('users').select('balance').eq('id', bet.user_id);
+          if (userData && userData.length > 0) {
+            const currentBal = Number(userData[0].balance || 0);
+            await supabase.from('users').update({ balance: currentBal + payout }).eq('id', bet.user_id);
+          }
+        } else {
+          // 不的中としてマーク
+          await supabase.from('bets').update({ payout_amount: 0, is_claimed: true }).eq('id', bet.id);
+        }
+      }
+    }
+
+    // 2. 1着馬の馬主へ賞金の10%を手当支給
+    const winningHorseObj = horses.find(h => String(h.horse_number) === String(rank1));
     if (winningHorseObj) {
       const { data: masterHorse } = await supabase.from('horse_masters').select('*').eq('name', winningHorseObj.name);
       if (masterHorse && masterHorse.length > 0) {
@@ -315,14 +374,20 @@ export default function SuperAdminConsole() {
           if (ownerUser && ownerUser.length > 0) {
             const newOwnerBal = (ownerUser[0].balance || 0) + ownerReward;
             await supabase.from('users').update({ balance: newOwnerBal }).eq('id', ownerUser[0].id);
-            alert(`🎉 1着馬「${winningHorseObj.name}」の馬主【${ownerName}】様に 10%手当 (${ownerReward.toLocaleString()} G) を加算しました！`);
           }
         }
       }
     }
 
-    await supabase.from('races').update({ status: 'finished', first_horse: firstHorse, second_horse: secondHorse, third_horse: thirdHorse }).eq('id', currentRace.id);
-    alert(`🏆 【${selectedRaceNo}R】の結果確定・振込が完了しました！`); 
+    // 3. レース確定フラグ更新
+    await supabase.from('races').update({ 
+      status: 'finished', 
+      first_horse: rank1, 
+      second_horse: rank2, 
+      third_horse: rank3 
+    }).eq('id', currentRace.id);
+
+    alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！\n・馬券的中者の残高へ配当金を振込完了\n・1着馬主への10%手当を振込完了`); 
     fetchRaces(); fetchUsers(); fetchHorseMasters();
   };
 
@@ -397,6 +462,96 @@ export default function SuperAdminConsole() {
         )}
 
         <div style={{ maxWidth: '1000px' }}>
+
+          {/* 🏆 TAB: 1着〜9着まで指定できる着順確定 ＆ 自動配当振込 */}
+          {adminTab === 'settle' && (
+            <div style={{ border: '2px solid #2563eb', padding: '32px', borderRadius: '16px', backgroundColor: '#ffffff' }}>
+              <h3 style={{ color: '#1e3a8a', marginTop: 0, fontWeight: 'bold', fontSize: '20px' }}>
+                🏆 【{selectedRaceNo}R】 着順確定（1着〜9着）＆ 配当金・馬主手当 自動振込
+              </h3>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '28px' }}>
+                <div>
+                  <label style={{ fontSize: '13px', color: '#dc2626', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>🥇 1着 (必須)</label>
+                  <select value={rank1} onChange={e=>setRank1(e.target.value)} style={inputStyle}>
+                    <option value="">選択してください</option>
+                    {horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '13px', color: '#2563eb', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>🥈 2着</label>
+                  <select value={rank2} onChange={e=>setRank2(e.target.value)} style={inputStyle}>
+                    <option value="">選択してください</option>
+                    {horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '13px', color: '#ca8a04', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>🥉 3着</label>
+                  <select value={rank3} onChange={e=>setRank3(e.target.value)} style={inputStyle}>
+                    <option value="">選択してください</option>
+                    {horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>4着</label>
+                  <select value={rank4} onChange={e=>setRank4(e.target.value)} style={inputStyle}>
+                    <option value="">選択</option>
+                    {horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>5着</label>
+                  <select value={rank5} onChange={e=>setRank5(e.target.value)} style={inputStyle}>
+                    <option value="">選択</option>
+                    {horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>6着</label>
+                  <select value={rank6} onChange={e=>setRank6(e.target.value)} style={inputStyle}>
+                    <option value="">選択</option>
+                    {horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>7着</label>
+                  <select value={rank7} onChange={e=>setRank7(e.target.value)} style={inputStyle}>
+                    <option value="">選択</option>
+                    {horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>8着</label>
+                  <select value={rank8} onChange={e=>setRank8(e.target.value)} style={inputStyle}>
+                    <option value="">選択</option>
+                    {horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>9着</label>
+                  <select value={rank9} onChange={e=>setRank9(e.target.value)} style={inputStyle}>
+                    <option value="">選択</option>
+                    {horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <button 
+                onClick={handleSettleFullRace} 
+                style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '18px', fontSize: '18px', fontWeight: 'bold', borderRadius: '12px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)' }}
+              >
+                🏁 結果確定・配当金＆馬主10%手当自動振込 💰
+              </button>
+            </div>
+          )}
 
           {/* 🧬 TAB: 生産馬 個別確認・編集 */}
           {adminTab === 'breed_edit' && (
@@ -658,19 +813,6 @@ export default function SuperAdminConsole() {
                   ))}
                 </tbody>
               </table>
-            </div>
-          )}
-
-          {/* 🏆 TAB: 着順確定 ＆ 10%手当支給 */}
-          {adminTab === 'settle' && (
-            <div style={{ border: '2px solid #2563eb', padding: '32px', borderRadius: '16px', backgroundColor: '#ffffff', maxWidth: '600px' }}>
-              <h3 style={{ color: '#1e3a8a', marginTop: 0, fontWeight: 'bold', fontSize: '20px' }}>🏆 【{selectedRaceNo}R】 着順確定 ＆ 配当＆10%手当自動振込</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '24px' }}>
-                <div><label style={{ fontSize: '13px', color: '#dc2626', fontWeight: 'bold' }}>🥇 1着</label><select value={firstHorse} onChange={e=>setFirstHorse(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
-                <div><label style={{ fontSize: '13px', color: '#2563eb', fontWeight: 'bold' }}>🥈 2着</label><select value={secondHorse} onChange={e=>setSecondHorse(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
-                <div><label style={{ fontSize: '13px', color: '#ca8a04', fontWeight: 'bold' }}>🥉 3着</label><select value={thirdHorse} onChange={e=>setThirdHorse(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
-              </div>
-              <button onClick={handleSettleFullRace} style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '16px', fontSize: '18px', fontWeight: 'bold', borderRadius: '10px', cursor: 'pointer' }}>🏁 結果確定・配当金＆馬主10%手当自動振込 💰</button>
             </div>
           )}
 
