@@ -303,12 +303,11 @@ export default function SuperAdminConsole() {
     fetchHorses(currentRace.id);
   };
 
-  // 🏆【完全自動配当振込＆手当還元ロジック】
+  // 🏆 着順確定・自動振込＆手当還元＆1〜9着全保存
   const handleSettleFullRace = async () => {
     if (!currentRace || !rank1) return alert('最低限1着の馬を選択してください');
     if (!confirm(`【${selectedRaceNo}R】の結果を確定し、的中者全員へ配当金を自動振込（残高加算）しますか？`)) return;
 
-    // 1. レースの全購入馬券を取得
     const { data: bets } = await supabase.from('bets').select('*').eq('race_id', String(currentRace.id));
 
     if (bets && bets.length > 0) {
@@ -317,7 +316,6 @@ export default function SuperAdminConsole() {
         let winOdds = 3.5;
         const sel = String(bet.selection);
 
-        // 各券種の的中判定
         if (bet.bet_type === '単勝' && sel === rank1) {
           isWin = true; winOdds = 3.5;
         } else if (bet.bet_type === '複勝' && [rank1, rank2, rank3].filter(Boolean).includes(sel)) {
@@ -345,23 +343,19 @@ export default function SuperAdminConsole() {
         if (isWin) {
           const payout = Math.floor(Number(bet.amount) * winOdds);
 
-          // 馬券ステータス更新
           await supabase.from('bets').update({ payout_amount: payout, is_claimed: true }).eq('id', bet.id);
 
-          // 🎯 当たったユーザーの残高へ自動振込（加算）
           const { data: userData } = await supabase.from('users').select('balance').eq('id', bet.user_id);
           if (userData && userData.length > 0) {
             const currentBal = Number(userData[0].balance || 0);
             await supabase.from('users').update({ balance: currentBal + payout }).eq('id', bet.user_id);
           }
         } else {
-          // 不的中としてマーク
           await supabase.from('bets').update({ payout_amount: 0, is_claimed: true }).eq('id', bet.id);
         }
       }
     }
 
-    // 2. 1着馬の馬主へ賞金の10%を手当支給
     const winningHorseObj = horses.find(h => String(h.horse_number) === String(rank1));
     if (winningHorseObj) {
       const { data: masterHorse } = await supabase.from('horse_masters').select('*').eq('name', winningHorseObj.name);
@@ -379,15 +373,20 @@ export default function SuperAdminConsole() {
       }
     }
 
-    // 3. レース確定フラグ更新
     await supabase.from('races').update({ 
       status: 'finished', 
       first_horse: rank1, 
       second_horse: rank2, 
-      third_horse: rank3 
+      third_horse: rank3,
+      rank4: rank4,
+      rank5: rank5,
+      rank6: rank6,
+      rank7: rank7,
+      rank8: rank8,
+      rank9: rank9
     }).eq('id', currentRace.id);
 
-    alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！\n・馬券的中者の残高へ配当金を振込完了\n・1着馬主への10%手当を振込完了`); 
+    alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！\nnetkeiba風の結果順位表がユーザー画面に自動反映されました。`); 
     fetchRaces(); fetchUsers(); fetchHorseMasters();
   };
 
@@ -463,7 +462,7 @@ export default function SuperAdminConsole() {
 
         <div style={{ maxWidth: '1000px' }}>
 
-          {/* 🏆 TAB: 1着〜9着まで指定できる着順確定 ＆ 自動配当振込 */}
+          {/* 🏆 TAB: 着順確定（1〜9着指定） */}
           {adminTab === 'settle' && (
             <div style={{ border: '2px solid #2563eb', padding: '32px', borderRadius: '16px', backgroundColor: '#ffffff' }}>
               <h3 style={{ color: '#1e3a8a', marginTop: 0, fontWeight: 'bold', fontSize: '20px' }}>

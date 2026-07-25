@@ -54,7 +54,6 @@ export default function OwnerPage() {
           setSelectedHorseName(data[0].name);
         }
       } else {
-        // DB未作成時のローカルフォールバック
         const local = JSON.parse(localStorage.getItem(`my_2yo_horses_${currentUser.discord_name}`) || '[]');
         setMyHorses(local);
       }
@@ -90,7 +89,6 @@ export default function OwnerPage() {
     }
   };
 
-  // 🎲 10万円 ダビスタ風仔馬生産
   const handleBreedGacha = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHorseName.trim()) return alert('馬名を入力してください');
@@ -115,8 +113,7 @@ export default function OwnerPage() {
 
     const [speed, stamina, guts, temper] = paramMap[rank];
 
-    // DBへのインサート試行
-    const { error } = await supabase.from('horse_masters').insert([
+    await supabase.from('horse_masters').insert([
       {
         name: newHorseName,
         owner_name: currentUser.discord_name,
@@ -129,13 +126,11 @@ export default function OwnerPage() {
       },
     ]);
 
-    // DBエラー時の安全バックアップ保存
     const newHorseObj = { id: Date.now().toString(), name: newHorseName, owner_name: currentUser.discord_name, rank, speed, stamina, guts, temper, status: '現役' };
     const localKey = `my_2yo_horses_${currentUser.discord_name}`;
     const currentLoc = JSON.parse(localStorage.getItem(localKey) || '[]');
     localStorage.setItem(localKey, JSON.stringify([newHorseObj, ...currentLoc]));
 
-    // 残高引落
     const newBal = (currentUser.balance || 0) - 100000;
     await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
 
@@ -240,7 +235,6 @@ export default function OwnerPage() {
               <TabBtn active={activeTab === 'jockey'} onClick={() => setActiveTab('jockey')} text="🏇 騎手変更申請" />
             </div>
 
-            {/* TAB 1: 自分の所有馬一覧 */}
             {activeTab === 'my_horses' && (
               <div>
                 <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🐎 自分の所有馬一覧 ({myHorses.length}頭)</h3>
@@ -286,7 +280,6 @@ export default function OwnerPage() {
               </div>
             )}
 
-            {/* TAB 2: 生産ガチャ */}
             {activeTab === 'breed' && (
               <div style={{ maxWidth: '500px' }}>
                 <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🎲 10万円 仔馬（2歳）生産ガチャ</h3>
@@ -305,7 +298,6 @@ export default function OwnerPage() {
               </div>
             )}
 
-            {/* TAB 3: 騎手変更申請 */}
             {activeTab === 'jockey' && (
               <div style={{ maxWidth: '500px' }}>
                 <h3 style={{ margin: '0 0 20px 0', color: '#16a34a', fontWeight: 'bold', fontSize: '18px' }}>
