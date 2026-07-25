@@ -153,7 +153,25 @@ export default function OwnerPage() {
     setActiveTab('my_horses');
   };
 
-  // 🧬 殿堂入り種牡馬・繁殖牝馬登録申請
+  // 🏋️‍♂️ 馬主限定「坂路・ウッド調教」機能
+  const handleTrainHorse = async (horseId: string, horseName: string, type: string) => {
+    if ((currentUser.balance || 0) < 50000) return alert('調教費用 (50,000 G) が足りません');
+    if (!confirm(`「${horseName}」を【${type}調教】しますか？ (費用: 50,000 G)`)) return;
+
+    let targetField = 'speed';
+    if (type === 'ウッド') targetField = 'guts';
+    if (type === 'プール') targetField = 'stamina';
+
+    await supabase.from('horse_masters').update({ [targetField]: 'S' }).eq('id', horseId);
+
+    const newBal = (currentUser.balance || 0) - 50000;
+    await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
+
+    setCurrentUser({ ...currentUser, balance: newBal });
+    alert(`🏋️‍♂️ 「${horseName}」の${type}調教が完了しました！能力がアップしました！`);
+    loadMyHorses();
+  };
+
   const handleRegisterPedigree = async (horseId: string, horseName: string) => {
     if (!confirm(`「${horseName}」を伝説の「種牡馬/繁殖牝馬」として血統登録しますか？`)) return;
 
@@ -293,19 +311,16 @@ export default function OwnerPage() {
                           </div>
 
                           {!isRetired && !isPendingRetire && !isPedigree && h.id && (
-                            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                              <button
-                                onClick={() => handleRegisterPedigree(h.id, h.name)}
-                                style={{ flex: 1, backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
-                              >
-                                種牡馬/繁殖登録 🧬
-                              </button>
-                              <button
-                                onClick={() => handleRetireRequest(h.id, h.name)}
-                                style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
-                              >
-                                引退 🛑
-                              </button>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button onClick={() => handleTrainHorse(h.id, h.name, '坂路')} style={{ flex: 1, backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>坂路(速)</button>
+                                <button onClick={() => handleTrainHorse(h.id, h.name, 'ウッド')} style={{ flex: 1, backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>ウッド(根)</button>
+                                <button onClick={() => handleTrainHorse(h.id, h.name, 'プール')} style={{ flex: 1, backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>プール(体)</button>
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button onClick={() => handleRegisterPedigree(h.id, h.name)} style={{ flex: 1, backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>種牡馬登録 🧬</button>
+                                <button onClick={() => handleRetireRequest(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>引退 🛑</button>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -334,7 +349,6 @@ export default function OwnerPage() {
               </div>
             )}
 
-            {/* 🧬 殿堂入り血統書表示 */}
             {activeTab === 'pedigree' && (
               <div>
                 <h3 style={{ margin: '0 0 16px 0', color: '#8b5cf6' }}>🧬 殿堂入り 伝説の種牡馬・繁殖牝馬ライブラリ</h3>

@@ -95,7 +95,6 @@ export default function IPATPage() {
     setHasClaimedBonus(lastClaim === today);
   };
 
-  // 🎁 ログインボーナス獲得
   const handleClaimDailyBonus = async () => {
     if (!currentUser || hasClaimedBonus) return;
     const today = new Date().toLocaleDateString();
@@ -111,7 +110,6 @@ export default function IPATPage() {
     fetchRanking();
   };
 
-  // 💬 パドックチャット送信
   const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim() || !currentUser) return;
@@ -123,7 +121,7 @@ export default function IPATPage() {
       content: chatInput,
     };
 
-    const { error } = await supabase.from('inquiries').insert([newMsg]);
+    await supabase.from('inquiries').insert([newMsg]);
 
     const local = JSON.parse(localStorage.getItem('app_paddock_chat') || '[]');
     localStorage.setItem('app_paddock_chat', JSON.stringify([{ id: Date.now().toString(), ...newMsg, created_at: new Date().toLocaleTimeString() }, ...local]));
@@ -300,7 +298,8 @@ export default function IPATPage() {
                 {hasClaimedBonus ? '🎁 本日受取済' : '🎁 ログボ受け取る'}
               </button>
 
-              <div style={{ backgroundColor: '#1e40af', padding: '8px 20px', borderRadius: '25px', display: 'flex', gap: '16px', border: '1px solid #60a5fa' }}>
+              <div style={{ backgroundColor: '#1e40af', padding: '8px 20px', borderRadius: '25px', display: 'flex', gap: '12px', alignItems: 'center', border: '1px solid #60a5fa' }}>
+                {currentUser.title && <span style={{ backgroundColor: '#f59e0b', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold' }}>{currentUser.title}</span>}
                 <span>👤 {currentUser.discord_name} 様</span>
                 <span style={{ color: '#fef08a', fontWeight: 'bold' }}>{(currentUser.balance || 0).toLocaleString()} G</span>
               </div>
@@ -361,6 +360,7 @@ export default function IPATPage() {
                       const r = races.find((race) => race.race_number === no);
                       const isRaceClosed = r?.status === 'closed';
                       const isRaceFinished = r?.status === 'finished';
+                      const grade = r?.grade || '一般';
 
                       return (
                         <button
@@ -376,7 +376,8 @@ export default function IPATPage() {
                             color: selectedRaceNo === no ? '#ffffff' : '#475569',
                           }}
                         >
-                          {no}R {isRaceFinished ? '🏁結果' : isRaceClosed ? '🔒' : ''}
+                          {grade !== '一般' && <span style={{ fontSize: '11px', backgroundColor: grade === 'G1' ? '#ef4444' : grade === 'G2' ? '#f59e0b' : '#3b82f6', color: '#fff', padding: '2px 5px', borderRadius: '4px', marginRight: '4px' }}>{grade}</span>}
+                          {no}R {isRaceFinished ? '🏁' : isRaceClosed ? '🔒' : ''}
                         </button>
                       );
                     })}
@@ -386,12 +387,19 @@ export default function IPATPage() {
                 {currentRace && (
                   <div style={{ backgroundColor: isFinished ? '#f0fdf4' : '#eff6ff', padding: '16px 20px', borderRadius: '12px', marginBottom: '24px', border: `1px solid ${isFinished ? '#86efac' : '#bfdbfe'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <span style={{ fontSize: '20px', fontWeight: 'bold', color: isFinished ? '#16a34a' : '#1e3a8a' }}>
-                        【{currentRace.race_number}R】{currentRace.title || '特別競走'}
-                      </span>
-                      <span style={{ marginLeft: '12px', fontSize: '14px', color: '#475569', fontWeight: 'bold' }}>
-                        {currentRace.distance_m || 1800}m / {currentRace.track_condition || '良'} / 天候: {currentRace.weather || '晴'}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {currentRace.grade && currentRace.grade !== '一般' && (
+                          <span style={{ backgroundColor: currentRace.grade === 'G1' ? '#dc2626' : currentRace.grade === 'G2' ? '#d97706' : '#2563eb', color: '#fff', fontSize: '12px', fontWeight: 'bold', padding: '4px 10px', borderRadius: '6px' }}>
+                            🏆 {currentRace.grade} 重賞
+                          </span>
+                        )}
+                        <span style={{ fontSize: '20px', fontWeight: 'bold', color: isFinished ? '#16a34a' : '#1e3a8a' }}>
+                          【{currentRace.race_number}R】{currentRace.title || '特別競走'}
+                        </span>
+                      </div>
+                      <div style={{ marginTop: '6px', fontSize: '14px', color: '#475569', fontWeight: 'bold' }}>
+                        {currentRace.distance_m || 1800}m / {currentRace.track_condition || '良'} / 天候: {currentRace.weather || '晴'} / 1着賞金: {(currentRace.prize || 1000000).toLocaleString()} G
+                      </div>
                     </div>
                     <div>
                       {isFinished ? (
@@ -482,18 +490,20 @@ export default function IPATPage() {
                   </form>
                 )}
 
+                {/* 🗞️ netkeiba風 競馬新聞印付き出走表 */}
                 <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {isFinished ? '🏁 レース確定結果順位表' : '📊 出走馬一覧 ＆ リアルタイムオッズ'}
+                  {isFinished ? '🏁 レース確定結果順位表' : '🗞️ 競馬新聞 ＆ リアルタイムオッズ出走表'}
                 </h3>
 
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
                   <thead>
                     <tr style={{ backgroundColor: '#1e3a8a', color: '#fff', textAlign: 'left' }}>
-                      <th style={{ padding: '12px', textAlign: 'center', width: '70px' }}>{isFinished ? '着順' : '馬番'}</th>
-                      <th style={{ padding: '12px', textAlign: 'center', width: '50px' }}>馬番</th>
+                      <th style={{ padding: '12px', textAlign: 'center', width: '60px' }}>印</th>
+                      <th style={{ padding: '12px', textAlign: 'center', width: '50px' }}>{isFinished ? '着順' : '馬番'}</th>
                       <th>馬名</th>
-                      <th>年齢</th>
+                      <th>調教/気配</th>
                       <th>騎手</th>
+                      <th>記者短評</th>
                       <th style={{ textAlign: 'right', paddingRight: '20px' }}>{isFinished ? '確定オッズ' : '単勝オッズ'}</th>
                     </tr>
                   </thead>
@@ -512,20 +522,23 @@ export default function IPATPage() {
                             backgroundColor: isRank1 ? '#fefce8' : isRank2 ? '#f8fafc' : isRank3 ? '#fff7ed' : '#ffffff',
                           }}
                         >
-                          <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', fontSize: '16px' }}>
+                          <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '18px', color: '#dc2626' }}>
+                            {h.mark || (idx === 0 ? '◎' : idx === 1 ? '○' : idx === 2 ? '▲' : '△')}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', fontSize: '15px' }}>
                             {isFinished ? (
-                              isRank1 ? <span style={{ color: '#ca8a04', fontWeight: '900' }}>🥇 1着</span> :
-                              isRank2 ? <span style={{ color: '#475569', fontWeight: '900' }}>🥈 2着</span> :
-                              isRank3 ? <span style={{ color: '#c2410c', fontWeight: '900' }}>🥉 3着</span> :
+                              isRank1 ? <span style={{ color: '#ca8a04', fontWeight: '900' }}>🥇1着</span> :
+                              isRank2 ? <span style={{ color: '#475569', fontWeight: '900' }}>🥈2着</span> :
+                              isRank3 ? <span style={{ color: '#c2410c', fontWeight: '900' }}>🥉3着</span> :
                               `${finishRank}着`
                             ) : (
                               h.horse_number
                             )}
                           </td>
-                          <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{h.horse_number}</td>
                           <td style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '15px' }}>🐎 {h.name}</td>
-                          <td>{h.age || 3}歳</td>
+                          <td><span style={{ backgroundColor: '#f1f5f9', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', color: '#475569' }}>{h.training_status || '絶好調 A'}</span></td>
                           <td style={{ color: '#2563eb', fontWeight: 'bold' }}>🏇 {h.jockey}</td>
+                          <td style={{ fontSize: '12px', color: '#64748b' }}>{h.comment || '気配上々、一発に期待'}</td>
                           <td style={{ textAlign: 'right', paddingRight: '20px' }}>
                             <span style={{ fontSize: '16px', fontWeight: '900', color: '#dc2626' }}>
                               {h.calculatedOdds || h.manual_odds || 5.0} 倍
@@ -583,10 +596,10 @@ export default function IPATPage() {
               </div>
             )}
 
-            {/* 👑 新設: 王冠資産ランキング */}
+            {/* 👑 王冠＆称号つき 資産ランキング */}
             {mainTab === 'ranking' && (
               <div>
-                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>👑 青森県競馬 リアルタイム資産ランキング</h3>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>👑 青森県競馬 リアルタイム資産ランキング ＆ 称号者一覧</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {rankingUsers.map((u, index) => {
                     const rank = index + 1;
@@ -610,9 +623,12 @@ export default function IPATPage() {
                           <span style={{ fontSize: '18px', fontWeight: '900', color: rank === 1 ? '#ca8a04' : '#475569', width: '80px' }}>
                             {crown}
                           </span>
-                          <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#0f172a' }}>
-                            👤 {u.discord_name} {isMe && '(あなた)'}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {u.title && <span style={{ backgroundColor: '#f59e0b', color: '#fff', fontSize: '11px', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>{u.title}</span>}
+                            <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#0f172a' }}>
+                              👤 {u.discord_name} {isMe && '(あなた)'}
+                            </span>
+                          </div>
                         </div>
                         <div style={{ fontSize: '18px', fontWeight: '900', color: '#16a34a' }}>
                           {(u.balance || 0).toLocaleString()} G
@@ -624,7 +640,7 @@ export default function IPATPage() {
               </div>
             )}
 
-            {/* 💬 新設: パドック予想＆雑談掲示板 */}
+            {/* 💬 パドック予想掲示板 */}
             {mainTab === 'chat' && (
               <div>
                 <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>💬 パドック予想 ＆ リアルタイム雑談掲示板</h3>
