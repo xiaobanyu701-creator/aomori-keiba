@@ -18,13 +18,11 @@ export default function IPATPage() {
   const [myBets, setMyBets] = useState<any[]>([]);
   const [newsList, setNewsList] = useState<any[]>([]);
   
-  // 👑 ランキング・💬 チャット・🎁 ログボ用ステート
   const [rankingUsers, setRankingUsers] = useState<any[]>([]);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [hasClaimedBonus, setHasClaimedBonus] = useState(false);
 
-  // 投票用
   const [betType, setBetType] = useState('単勝');
   const [selectedHorse1, setSelectedHorse1] = useState('');
   const [selectedHorse2, setSelectedHorse2] = useState('');
@@ -490,7 +488,6 @@ export default function IPATPage() {
                   </form>
                 )}
 
-                {/* 🗞️ netkeiba風 競馬新聞印付き出走表 */}
                 <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   {isFinished ? '🏁 レース確定結果順位表' : '🗞️ 競馬新聞 ＆ リアルタイムオッズ出走表'}
                 </h3>
@@ -596,7 +593,6 @@ export default function IPATPage() {
               </div>
             )}
 
-            {/* 👑 王冠＆称号つき 資産ランキング */}
             {mainTab === 'ranking' && (
               <div>
                 <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>👑 青森県競馬 リアルタイム資産ランキング ＆ 称号者一覧</h3>
@@ -640,7 +636,6 @@ export default function IPATPage() {
               </div>
             )}
 
-            {/* 💬 パドック予想掲示板 */}
             {mainTab === 'chat' && (
               <div>
                 <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>💬 パドック予想 ＆ リアルタイム雑談掲示板</h3>

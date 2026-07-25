@@ -38,14 +38,16 @@ export default function SuperAdminConsole() {
   const [breedEditOwnerName, setBreedEditOwnerName] = useState<string>('');
   const [userBredHorses, setUserBredHorses] = useState<any[]>([]);
 
-  // 📢 アプデ・お知らせ＆💬 チャット＆🎁 ログボ設定用ステート
+  // 📢 アプデ・お知らせ＆💬 チャット＆🎁 ログボ＆🏋️‍♂️ 調教確率設定用ステート
   const [newsTitle, setNewsTitle] = useState('');
   const [newsContent, setNewsContent] = useState('');
   const [newsList, setNewsList] = useState<any[]>([]);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [dailyBonusConfig, setDailyBonusConfig] = useState<number>(100000);
+  const [trainingSuccessRate, setTrainingSuccessRate] = useState<number>(70);
+  const [trainingSuperRate, setTrainingSuperRate] = useState<number>(15);
 
-  // レース設定用 (🏆 重賞グレードG1〜G3追加)
+  // レース設定用
   const [editTitle, setEditTitle] = useState('');
   const [editDistance, setEditDistance] = useState(1600);
   const [editCondition, setEditCondition] = useState('良');
@@ -75,6 +77,10 @@ export default function SuperAdminConsole() {
       fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters(); fetchNews(); fetchChat();
       const cfg = Number(localStorage.getItem('daily_bonus_amount') || 100000);
       setDailyBonusConfig(cfg);
+      const sRate = Number(localStorage.getItem('training_success_rate') || 70);
+      const spRate = Number(localStorage.getItem('training_super_rate') || 15);
+      setTrainingSuccessRate(sRate);
+      setTrainingSuperRate(spRate);
     } 
   }, [isAuthenticated]);
 
@@ -188,7 +194,13 @@ export default function SuperAdminConsole() {
     }
   };
 
-  // 🎖️ プレイヤー称号の付与
+  // 🏋️‍♂️ 調教成功確率の変更保存
+  const handleSaveTrainingRates = () => {
+    localStorage.setItem('training_success_rate', trainingSuccessRate.toString());
+    localStorage.setItem('training_super_rate', trainingSuperRate.toString());
+    alert(`🏋️‍♂️ 調教確率を保存しました！\n・通常成功率: ${trainingSuccessRate}%\n・大成功(Sランク)率: ${trainingSuperRate}%`);
+  };
+
   const handleUpdateUserTitle = async () => {
     if (!selectedUser) return;
     await supabase.from('users').update({ title: customTitleInput }).eq('id', selectedUser.id);
@@ -196,7 +208,6 @@ export default function SuperAdminConsole() {
     fetchUsers();
   };
 
-  // 🗞️ 競馬新聞の「印（◎○▲△）」AI自動付与サポート
   const handleAutoAssignMarks = async () => {
     const marks = ['◎', '○', '▲', '△', '×'];
     for (let i = 0; i < horses.length; i++) {
@@ -245,7 +256,7 @@ export default function SuperAdminConsole() {
   };
 
   const handleUpdateBredHorseDetail = async (horseId: string, field: string, value: any) => {
-    await supabase.from('horse_masters').update({ [field]: value }).eq('id',horseId);
+    await supabase.from('horse_masters').update({ [field]: value }).eq('id', horseId);
     loadOwnerBredHorses(breedEditOwnerName);
   };
 
@@ -329,7 +340,6 @@ export default function SuperAdminConsole() {
     alert(`🏁 「${horseName}」を引退処理しました。`); fetchHorseMasters();
   };
 
-  // 🛠️ レース条件保存 (G1〜G3重賞設定追加)
   const handleUpdateRaceInfo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentRace) return;
@@ -528,7 +538,7 @@ export default function SuperAdminConsole() {
 
         <div style={{ maxWidth: '1000px' }}>
 
-          {/* 👤 TAB: プレイヤー管理 ＋ 🎖️ 称号授与 ＋ 🎁 ログボ設定 */}
+          {/* 👤 TAB: プレイヤー管理 ＋ 🎖️ 称号授与 ＋ 🎁 ログボ ＋ 🏋️‍♂️ 調教確率設定 */}
           {adminTab === 'users' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
               <div style={{ backgroundColor: '#ffffff', border: '2px solid #2563eb', borderRadius: '16px', padding: '28px' }}>
@@ -559,7 +569,6 @@ export default function SuperAdminConsole() {
 
                     <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: 0 }} />
 
-                    {/* 🎖️ 称号授与コントロール */}
                     <div>
                       <h4 style={{ margin: '0 0 10px 0', color: '#ca8a04', fontSize: '16px' }}>🎖️ 限定称号を授与・付与する</h4>
                       <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -595,6 +604,22 @@ export default function SuperAdminConsole() {
                 )}
               </div>
 
+              {/* 🏋️‍♂️ 新設: 馬主限定 調教成功確率コントロールパネル */}
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '2px solid #2563eb' }}>
+                <h3 style={{ margin: '0 0 12px 0', color: '#2563eb', fontSize: '18px', fontWeight: 'bold' }}>🏋️‍♂️ 馬主限定「調教成功・大成功確率」設定</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 120px', gap: '16px', alignItems: 'end' }}>
+                  <div>
+                    <label style={labelStyle}>通常成功確率 (%)</label>
+                    <input type="number" min="0" max="100" value={trainingSuccessRate} onChange={e=>setTrainingSuccessRate(Number(e.target.value))} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>大成功(Sランク達成)確率 (%)</label>
+                    <input type="number" min="0" max="100" value={trainingSuperRate} onChange={e=>setTrainingSuperRate(Number(e.target.value))} style={inputStyle} />
+                  </div>
+                  <button onClick={handleSaveTrainingRates} style={{ padding: '12px 20px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>保存 💾</button>
+                </div>
+              </div>
+
               {/* 🎁 ログインボーナス設定 */}
               <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
                 <h3 style={{ margin: '0 0 12px 0', color: '#ca8a04', fontSize: '18px', fontWeight: 'bold' }}>🎁 デイリーログインボーナス設定</h3>
@@ -627,7 +652,6 @@ export default function SuperAdminConsole() {
               <form onSubmit={handleUpdateRaceInfo} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div><label style={labelStyle}>レース名</label><input type="text" value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={inputStyle} /></div>
                 
-                {/* 🏆 G1〜G3重賞設定追加 */}
                 <div>
                   <label style={labelStyle}>🏆 レース格付け（重賞グレード）</label>
                   <select value={editGrade} onChange={e=>setEditGrade(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: editGrade === 'G1' ? '#dc2626' : editGrade === 'G2' ? '#d97706' : '#2563eb' }}>

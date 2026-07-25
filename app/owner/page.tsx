@@ -153,22 +153,42 @@ export default function OwnerPage() {
     setActiveTab('my_horses');
   };
 
-  // 🏋️‍♂️ 馬主限定「坂路・ウッド調教」機能
+  // 🏋️‍♂️ 管理者設定の確率に基づく「坂路・ウッド調教」システム
   const handleTrainHorse = async (horseId: string, horseName: string, type: string) => {
     if ((currentUser.balance || 0) < 50000) return alert('調教費用 (50,000 G) が足りません');
     if (!confirm(`「${horseName}」を【${type}調教】しますか？ (費用: 50,000 G)`)) return;
+
+    // 管理者設定の成功・大成功確率を取得
+    const successRate = Number(localStorage.getItem('training_success_rate') || 70);
+    const superRate = Number(localStorage.getItem('training_super_rate') || 15);
+
+    const rand = Math.random() * 100;
+    let resultType = 'fail';
+
+    if (rand < superRate) {
+      resultType = 'super';
+    } else if (rand < successRate) {
+      resultType = 'success';
+    }
 
     let targetField = 'speed';
     if (type === 'ウッド') targetField = 'guts';
     if (type === 'プール') targetField = 'stamina';
 
-    await supabase.from('horse_masters').update({ [targetField]: 'S' }).eq('id', horseId);
+    if (resultType === 'super') {
+      await supabase.from('horse_masters').update({ [targetField]: 'S', rank: 'S' }).eq('id', horseId);
+      alert(`🌟 大成功！！「${horseName}」の能力が激上がりしました！【 ${type}能力: Sランク達成 】`);
+    } else if (resultType === 'success') {
+      await supabase.from('horse_masters').update({ [targetField]: 'A' }).eq('id', horseId);
+      alert(`🎯 調教成功！「${horseName}」の${type}能力がアップしました！`);
+    } else {
+      alert(`❌ 残念…「${horseName}」の調教は失敗し、能力は変わりませんでした。`);
+    }
 
     const newBal = (currentUser.balance || 0) - 50000;
     await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
 
     setCurrentUser({ ...currentUser, balance: newBal });
-    alert(`🏋️‍♂️ 「${horseName}」の${type}調教が完了しました！能力がアップしました！`);
     loadMyHorses();
   };
 
