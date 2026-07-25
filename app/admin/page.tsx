@@ -36,6 +36,7 @@ export default function SuperAdminConsole() {
   const [editDistance, setEditDistance] = useState(1600);
   const [editCondition, setEditCondition] = useState('良');
   const [editWeather, setEditWeather] = useState('晴');
+  const [editPrize, setEditPrize] = useState(1000000); // 1着賞金 (デフォルト1,000,000G)
 
   const [newHorseNumber, setNewHorseNumber] = useState(1);
   const [newHorseName, setNewHorseName] = useState(''); 
@@ -71,21 +72,11 @@ export default function SuperAdminConsole() {
         setEditDistance(race.distance_m || 1600);
         setEditCondition(race.track_condition || '良');
         setEditWeather(race.weather || '晴');
+        setEditPrize(race.prize || 1000000);
         fetchHorses(race.id);
       }
     }
   }, [selectedRaceNo, races]);
-
-  useEffect(() => {
-    if (selectedUserId && users.length > 0) {
-      const target = users.find(u => u.id === selectedUserId);
-      if (target) {
-        setSelectedUser(target);
-        setCustomBalanceInput((target.balance || 0).toString());
-        setCustomPinInput(target.pin_code || '');
-      }
-    } else { setSelectedUser(null); }
-  }, [selectedUserId, users]);
 
   const fetchRaces = async () => {
     const { data } = await supabase.from('races').select('*');
@@ -179,7 +170,7 @@ export default function SuperAdminConsole() {
       status: '現役'
     }]);
 
-    setAddHorseMasterName(''); setAddHorseMasterOwner(''); fetchHorseMasters(); alert('登録しました！');
+    setAddHorseMasterName(''); setAddHorseMasterOwner(''); fetchHorseMasters(); alert('登録しました！該当馬主へ自動紐づけされます。');
   };
 
   const handleDeleteHorseMaster = async (id: string, name: string) => {
@@ -188,6 +179,7 @@ export default function SuperAdminConsole() {
     fetchHorseMasters();
   };
 
+  // レース条件＆賞金の保存
   const handleUpdateRaceInfo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentRace) return;
@@ -195,12 +187,14 @@ export default function SuperAdminConsole() {
       title: editTitle,
       distance_m: editDistance,
       track_condition: editCondition,
-      weather: editWeather
+      weather: editWeather,
+      prize: editPrize
     }).eq('id', currentRace.id);
-    alert('保存しました！');
+    alert('保存しました！賞金設定も更新されました。');
     fetchRaces();
   };
 
+  // 出走馬追加＆自動「出走予定」化
   const handleAddHorse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentRace || !newHorseName) return alert('馬名を選択してください');
@@ -216,7 +210,12 @@ export default function SuperAdminConsole() {
       mark: newMark,
       condition_mark: newConditionMark
     }]);
+
+    // 競走馬マスターのステータスを出走に変更
+    await supabase.from('horse_masters').update({ status: `出走(${selectedRaceNo}R)` }).eq('name', newHorseName);
+
     fetchHorses(currentRace.id);
+    fetchHorseMasters();
     alert(`🎉 【${selectedRaceNo}R】に「${newHorseName}」を出走登録しました！`);
   };
 
@@ -244,51 +243,55 @@ export default function SuperAdminConsole() {
     fetchHorses(currentRace.id);
   };
 
+  // 🏆 着順確定 ＆ 配当金自動振込 ＆ 💰 馬主へ10%手当還元
   const handleSettleFullRace = async () => {
     if (!currentRace || !firstHorse) return alert('1着を指定してください');
-    if (!confirm(`【${selectedRaceNo}R】の結果を確定し、勝ったプレイヤーに配当を自動振込しますか？`)) return;
+    if (!confirm(`【${selectedRaceNo}R】の結果を確定しますか？\n・的中馬券者への配当振込\n・優勝馬主への手当還元(賞金の10%)\nが自動実行されます。`)) return;
 
-    const { data: bets } = await supabase.from('bets').select('*').eq('race_id', currentRace.id);
-    if (bets) {
-      for (const bet of bets) {
-        let isWin = false; let odds = 2.5; const sel = String(bet.selection);
+    // 1. 馬券的中者への配当金振込
+    const allLocalBets = JSON.parse(localStorage.getItem('all_user_bets') || '[]');
+    const raceBets = allLocalBets.filter((b: any) => Number(b.race_number) === Number(selectedRaceNo));
 
-        if (bet.bet_type === '単勝' && sel === firstHorse) { isWin = true; odds = 3.5; }
-        else if (bet.bet_type === '複勝' && (sel === firstHorse || sel === secondHorse || sel === thirdHorse)) { isWin = true; odds = 1.8; }
-        else if (bet.bet_type === '馬単' && sel === `${firstHorse}-${secondHorse}`) { isWin = true; odds = 15.0; }
-        else if (bet.bet_type === '馬連' && ((sel === `${firstHorse}-${secondHorse}`) || (sel === `${secondHorse}-${firstHorse}`))) { isWin = true; odds = 8.5; }
-        else if (bet.bet_type === 'ワイド') {
-          const [h1, h2] = sel.split('-');
-          const w1 = (h1===firstHorse&&h2===secondHorse)||(h1===secondHorse&&h2===firstHorse);
-          const w2 = (h1===firstHorse&&h2===thirdHorse)||(h1===thirdHorse&&h2===firstHorse);
-          const w3 = (h1===secondHorse&&h2===thirdHorse)||(h1===thirdHorse&&h2===secondHorse);
-          if (w1 || w2 || w3) { isWin = true; odds = 3.2; }
-        }
-        else if (bet.bet_type === '3連複') {
-          const arr = sel.split('-');
-          const resultArr = [firstHorse, secondHorse, thirdHorse];
-          if (arr.every((x) => resultArr.includes(x))) { isWin = true; odds = 22.0; }
-        }
-        else if (bet.bet_type === '3連単' && sel === `${firstHorse}-${secondHorse}-${thirdHorse}`) {
-          isWin = true; odds = 65.0;
-        }
+    for (const bet of raceBets) {
+      let isWin = false; let odds = 2.5; const sel = String(bet.selection);
 
-        if (isWin) {
-          const payout = Math.floor(bet.amount * odds);
-          await supabase.from('bets').update({ payout_amount: payout, is_claimed: true }).eq('id', bet.id);
-          const { data: u } = await supabase.from('users').select('balance').eq('id', bet.user_id);
-          if (u && u.length > 0) {
-            await supabase.from('users').update({ balance: (u[0].balance || 0) + payout }).eq('id', bet.user_id);
+      if (bet.bet_type === '単勝' && sel === firstHorse) { isWin = true; odds = 3.5; }
+      else if (bet.bet_type === '複勝' && (sel === firstHorse || sel === secondHorse || sel === thirdHorse)) { isWin = true; odds = 1.8; }
+      else if (bet.bet_type === '馬単' && sel === `${firstHorse}-${secondHorse}`) { isWin = true; odds = 15.0; }
+      else if (bet.bet_type === '馬連' && ((sel === `${firstHorse}-${secondHorse}`) || (sel === `${secondHorse}-${firstHorse}`))) { isWin = true; odds = 8.5; }
+
+      if (isWin) {
+        const payout = Math.floor(bet.amount * odds);
+        const { data: u } = await supabase.from('users').select('balance').eq('id', bet.user_id);
+        if (u && u.length > 0) {
+          await supabase.from('users').update({ balance: (u[0].balance || 0) + payout }).eq('id', bet.user_id);
+        }
+      }
+    }
+
+    // 2. 優勝馬の馬主へ賞金の10%を手当付与
+    const winningHorseObj = horses.find(h => String(h.horse_number) === String(firstHorse));
+    if (winningHorseObj) {
+      const { data: masterHorse } = await supabase.from('horse_masters').select('*').eq('name', winningHorseObj.name);
+      if (masterHorse && masterHorse.length > 0) {
+        const ownerName = masterHorse[0].owner_name;
+        if (ownerName) {
+          const prizeMoney = currentRace.prize || 1000000;
+          const ownerReward = Math.floor(prizeMoney * 0.10); // 10%の手当
+
+          const { data: ownerUser } = await supabase.from('users').select('*').eq('discord_name', ownerName);
+          if (ownerUser && ownerUser.length > 0) {
+            const newOwnerBal = (ownerUser[0].balance || 0) + ownerReward;
+            await supabase.from('users').update({ balance: newOwnerBal }).eq('id', ownerUser[0].id);
+            alert(`🎉 1着馬「${winningHorseObj.name}」の馬主【${ownerName}】様に、1着手当 (${ownerReward.toLocaleString()} G) を加算しました！`);
           }
-        } else {
-          await supabase.from('bets').update({ payout_amount: 0, is_claimed: true }).eq('id', bet.id);
         }
       }
     }
 
     await supabase.from('races').update({ status: 'finished', first_horse: firstHorse, second_horse: secondHorse, third_horse: thirdHorse }).eq('id', currentRace.id);
 
-    alert(`🏆 【${selectedRaceNo}R】の結果確定・自動振込が完了しました！`); 
+    alert(`🏆 【${selectedRaceNo}R】の結果確定・一括自動振込が完了しました！`); 
     fetchRaces(); fetchUsers(); fetchHorseMasters();
   };
 
@@ -340,7 +343,7 @@ export default function SuperAdminConsole() {
         
         <div style={{ display: 'flex', flexDirection: 'column', padding: '16px 8px', gap: '8px', flex: 1 }}>
           <div style={{ fontSize: '12px', color: '#93c5fd', fontWeight: 'bold', padding: '0 8px', marginTop: '8px' }}>レース管理 (1〜12R)</div>
-          <SideButton active={adminTab === 'race'} onClick={() => setAdminTab('race')} icon="🛠️" text="レース条件設定 / 締切" />
+          <SideButton active={adminTab === 'race'} onClick={() => setAdminTab('race')} icon="🛠️" text="レース条件設定 / 賞金 / 締切" />
           <SideButton active={adminTab === 'horses'} onClick={() => setAdminTab('horses')} icon="🐴" text="出走馬追加・編集" />
           <SideButton active={adminTab === 'odds'} onClick={() => setAdminTab('odds')} icon="📈" text="オッズ管理 (AI)" />
           <SideButton active={adminTab === 'settle'} onClick={() => setAdminTab('settle')} icon="🏆" text="着順確定＆自動振込" />
@@ -381,10 +384,10 @@ export default function SuperAdminConsole() {
 
         <div style={{ maxWidth: '1000px' }}>
           
-          {/* 🛠️ TAB: レース条件 ＆ 締切管理 */}
+          {/* 🛠️ TAB: レース条件 ＆ 賞金設定 ＆ 締切管理 */}
           {adminTab === 'race' && (
             <div style={{ backgroundColor: '#ffffff', padding: '28px', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '650px' }}>
-              <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '20px' }}>🛠️ 【{selectedRaceNo}R】 レース条件 ＆ 投票締切設定</h3>
+              <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '20px' }}>🛠️ 【{selectedRaceNo}R】 レース条件 ＆ 賞金設定 ＆ 投票締切</h3>
               
               <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '12px', border: '2px solid #cbd5e1', marginBottom: '24px' }}>
                 <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#475569', marginBottom: '12px' }}>現在の投票ステータス: {currentRace?.status === 'closed' ? '🔒 締め切り中' : '🟢 投票受付中'}</div>
@@ -405,7 +408,13 @@ export default function SuperAdminConsole() {
                   <div><label style={labelStyle}>馬場状態</label><select value={editCondition} onChange={e=>setEditCondition(e.target.value)} style={inputStyle}><option value="良">良</option><option value="稍重">稍重</option><option value="重">重</option><option value="不良">不良</option></select></div>
                   <div><label style={labelStyle}>天候</label><select value={editWeather} onChange={e=>setEditWeather(e.target.value)} style={inputStyle}><option value="晴">晴</option><option value="曇">曇</option><option value="雨">雨</option><option value="雪">雪</option></select></div>
                 </div>
-                <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>レース条件を保存 💾</button>
+
+                <div>
+                  <label style={labelStyle}>💰 1着総賞金 (G) ※勝った馬主へ10%手当が自動支給されます</label>
+                  <input type="number" step="100000" value={editPrize} onChange={e=>setEditPrize(Number(e.target.value))} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }} />
+                </div>
+
+                <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>レース条件・賞金を保存 💾</button>
               </form>
             </div>
           )}
@@ -477,13 +486,13 @@ export default function SuperAdminConsole() {
           {/* 🏆 TAB: 着順確定 */}
           {adminTab === 'settle' && (
             <div style={{ border: '2px solid #2563eb', padding: '32px', borderRadius: '16px', backgroundColor: '#ffffff', maxWidth: '600px' }}>
-              <h3 style={{ color: '#1e3a8a', marginTop: 0, fontWeight: 'bold', fontSize: '20px' }}>🏆 【{selectedRaceNo}R】 着順確定 ＆ 配当自動振込</h3>
+              <h3 style={{ color: '#1e3a8a', marginTop: 0, fontWeight: 'bold', fontSize: '20px' }}>🏆 【{selectedRaceNo}R】 着順確定 ＆ 配当＆10%手当自動振込</h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '24px' }}>
                 <div><label style={{ fontSize: '13px', color: '#dc2626', fontWeight: 'bold' }}>🥇 1着</label><select value={firstHorse} onChange={e=>setFirstHorse(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
                 <div><label style={{ fontSize: '13px', color: '#2563eb', fontWeight: 'bold' }}>🥈 2着</label><select value={secondHorse} onChange={e=>setSecondHorse(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
                 <div><label style={{ fontSize: '13px', color: '#ca8a04', fontWeight: 'bold' }}>🥉 3着</label><select value={thirdHorse} onChange={e=>setThirdHorse(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
               </div>
-              <button onClick={handleSettleFullRace} style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '16px', fontSize: '18px', fontWeight: 'bold', borderRadius: '10px', cursor: 'pointer' }}>🏁 結果確定・配当金一括自動振込実行 💰</button>
+              <button onClick={handleSettleFullRace} style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '16px', fontSize: '18px', fontWeight: 'bold', borderRadius: '10px', cursor: 'pointer' }}>🏁 結果確定・配当金＆馬主10%手当自動振込 💰</button>
             </div>
           )}
 
@@ -526,7 +535,7 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 🤝 TAB: 馬主＆馬 紐づけ管理 【※復活】 */}
+          {/* 🤝 TAB: 馬主＆馬 紐づけ管理 */}
           {adminTab === 'owner_assign' && (
             <div style={{ backgroundColor: '#ffffff', padding: '28px', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '650px' }}>
               <h3 style={{ marginTop: 0, color: '#16a34a', fontWeight: 'bold', fontSize: '20px' }}>
@@ -566,7 +575,7 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 🐎 TAB: 現役競走馬マスター 【※復活】 */}
+          {/* 🐎 TAB: 現役競走馬マスター */}
           {adminTab === 'horse_masters' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               <div style={{ backgroundColor: '#ffffff', padding: '28px', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '600px' }}>
@@ -633,7 +642,7 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 👤 TAB: プレイヤー管理 【※復活】 */}
+          {/* 👤 TAB: プレイヤー管理 */}
           {adminTab === 'users' && (
             <div style={{ backgroundColor: '#ffffff', border: '2px solid #2563eb', borderRadius: '16px', padding: '28px' }}>
               <h2 style={{ margin: '0 0 20px 0', color: '#1e3a8a', fontSize: '20px', fontWeight: 'bold' }}>👤 プレイヤー管理</h2>
