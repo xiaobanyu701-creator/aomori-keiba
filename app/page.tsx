@@ -218,7 +218,7 @@ export default function IPATPage() {
     if (data) setMyBets([...data].reverse());
   };
 
-  // 🛡️ 端末制限（複アカ作成ブロック）機能を追加した認証処理
+  // 🛡️ 端末制限（複アカブロック）付き ログイン・新規登録処理
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!discordInput || !pinInput) return alert('名前とPINコードを入力してください');
@@ -227,13 +227,14 @@ export default function IPATPage() {
     const exUser = users?.find((u) => u.discord_name === discordInput);
 
     if (exUser) {
+      // 既存ユーザーのログイン
       if (exUser.pin_code === pinInput) {
         setCurrentUser(exUser);
       } else {
         alert('PINコードが違います');
       }
     } else {
-      // 🚫 端末チェック：すでに新規登録済みの端末か判定
+      // 新規作成時：ブラウザの記憶をチェックして複アカをブロック
       const hasAccountCreated = localStorage.getItem('app_account_created');
       if (hasAccountCreated) {
         return alert(
@@ -252,8 +253,9 @@ export default function IPATPage() {
         }
 
         if (inserted && inserted.length > 0) {
-          // 端末に作成完了フラグをセット
+          // 🎉 登録完了の証として、端末にフラグを保存する（二度と作れなくなる）
           localStorage.setItem('app_account_created', 'true');
+          
           setCurrentUser(inserted[0]);
           alert('🎉 登録完了！ 10,000,000 G 付与！');
         }
@@ -403,7 +405,7 @@ export default function IPATPage() {
         </div>
       </header>
 
-      {/* メインコンテナ（スマホでは左右余白を詰める） */}
+      {/* メインコンテナ */}
       <div style={{ maxWidth: '1000px', margin: '16px auto', padding: '0 12px' }}>
         {!currentUser ? (
           <div
@@ -420,8 +422,9 @@ export default function IPATPage() {
           >
             <div style={{ fontSize: '40px', marginBottom: '12px' }}>🎫</div>
             <h2 style={{ color: '#1e3a8a', margin: '0 0 10px 0', fontSize: '20px' }}>IPAT ログイン</h2>
+
             <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '20px' }}>
-              <input type="text" placeholder="ユーザー名 (Discord名)" value={discordInput} onChange={(e) => setDiscordInput(e.target.value)} style={inputStyle} />
+              <input type="text" placeholder="ユーザー名" value={discordInput} onChange={(e) => setDiscordInput(e.target.value)} style={inputStyle} />
               <input type="password" maxLength={4} value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="暗証番号 (4桁)" style={{ ...inputStyle, textAlign: 'center', letterSpacing: '6px' }} />
               <button type="submit" style={{ padding: '14px', backgroundColor: '#1e3a8a', color: '#fff', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', border: 'none', cursor: 'pointer' }}>
                 ログイン / 新規登録
@@ -431,7 +434,7 @@ export default function IPATPage() {
         ) : (
           <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0' }}>
             
-            {/* 📱 スマホ対応 横スクロールタブナビゲーション */}
+            {/* 📱 横スクロールタブナビゲーション */}
             <div style={{ display: 'flex', gap: '6px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px', marginBottom: '20px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text={isFinished ? '🏁 結果' : '🎫 投票'} />
               <TabBtn active={mainTab === 'history'} onClick={() => setMainTab('history')} text={`📋 履歴 (${myBets.length})`} />
@@ -509,7 +512,7 @@ export default function IPATPage() {
                   </div>
                 )}
 
-                {/* 📱 投票フォーム（スマホでは1列縦並び） */}
+                {/* 投票フォーム */}
                 {!isFinished && (
                   <form onSubmit={handleBuyBet} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
@@ -589,7 +592,7 @@ export default function IPATPage() {
                   </form>
                 )}
 
-                {/* 📱 スマホ横スクロール可能テーブル（馬柱） */}
+                {/* 出走表（馬柱） */}
                 <h3 style={{ margin: '0 0 12px 0', color: '#1e3a8a', fontSize: '16px' }}>
                   {isFinished ? '🏁 レース確定結果' : '🗞️ 出走表 ＆ 近走馬柱'}
                 </h3>
@@ -632,7 +635,7 @@ export default function IPATPage() {
                                   <span style={{ fontWeight: 'bold', color: last1.rank_result === 1 ? '#ca8a04' : '#1e3a8a' }}>
                                     {last1.rank_result}着 / {last1.race_name}
                                   </span>
-                                </div>
+                                 </div>
                               ) : (
                                 <span style={{ color: '#cbd5e1' }}>前走なし</span>
                               )}
@@ -916,5 +919,5 @@ function TabBtn({ active, onClick, text }: { active: boolean; onClick: () => voi
 }
 
 const labelStyle = { display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px', fontWeight: 'bold' };
-// 👇 ご指定のスタイルの通りに設定しています
+// 👇 ご指定いただいた新しい inputStyle に置き換えました！
 const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', color: '#0f172a', fontSize: '13px' };
