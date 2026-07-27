@@ -4,139 +4,113 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 
-export default function Home() {
-  const [user, setUser] = useState<any>(null);
-  const [dbUser, setDbUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+export default function IPATPage() {
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [discordInput, setDiscordInput] = useState('');
+  const [pinInput, setPinInput] = useState('');
 
-  // レース・馬・馬券データ
+  const [mainTab, setMainTab] = useState<'bet' | 'history' | 'news' | 'ranking' | 'chat' | 'auction'>('bet');
+
   const [races, setRaces] = useState<any[]>([]);
   const [selectedRaceNo, setSelectedRaceNo] = useState<number>(1);
   const [currentRace, setCurrentRace] = useState<any>(null);
   const [horses, setHorses] = useState<any[]>([]);
-  const [userBets, setUserBets] = useState<any[]>([]);
-
-  // 投票用ステート
-  const [betType, setBetType] = useState<string>('単勝');
-  const [selectedHorse1, setSelectedHorse1] = useState<string>('');
-  const [selectedHorse2, setSelectedHorse2] = useState<string>('');
-  const [betAmount, setBetAmount] = useState<number>(1000);
-
-  // パドック雑談チャット
+  const [myBets, setMyBets] = useState<any[]>([]);
+  const [newsList, setNewsList] = useState<any[]>([]);
+  
+  const [rankingUsers, setRankingUsers] = useState<any[]>([]);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
-  const [chatInput, setChatInput] = useState<string>('');
+  const [chatInput, setChatInput] = useState('');
+  const [hasClaimedBonus, setHasClaimedBonus] = useState(false);
+  const [auctions, setAuctions] = useState<any[]>([]);
+  const [bidAmountInput, setBidAmountInput] = useState<number>(100000);
 
-  // 1. ログイン状態の同期 ＆ 自動ロール付与API呼び出し
+  const [pastResults, setPastResults] = useState<{ [key: string]: any[] }>({});
+
+  const [betType, setBetType] = useState('単勝');
+  const [selectedHorse1, setSelectedHorse1] = useState('');
+  const [selectedHorse2, setSelectedHorse2] = useState('');
+  const [selectedHorse3, setSelectedHorse3] = useState('');
+  const [betAmount, setBetAmount] = useState(1000);
+
+  // 🎮 Supabase OAuthセッション監視 ＆ Discordロール自動付与
   useEffect(() => {
-    const initAuthAndSync = async () => {
-      setLoading(true);
+    const checkOAuthSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
+      const oauthUser = session?.user;
 
-      if (session) {
-        setUser(session.user);
-        const discordName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.user_metadata?.preferred_username;
+      if (oauthUser) {
+        // OAuthでログインしたユーザー情報をセット/復元
+        const discordName = oauthUser.user_metadata?.full_name || oauthUser.email;
+        
+        // DB上のユーザー検索
+        const { data: dbUsers } = await supabase.from('users').select('*').eq('discord_name', discordName);
+        if (dbUsers && dbUsers.length > 0) {
+          setCurrentUser(dbUsers[0]);
+        } else {
+          // 未登録ならOAuthログイン者として仮設定
+          setCurrentUser({
+            id: oauthUser.id,
+            discord_name: discordName,
+            balance: 10000000,
+            title: 'OAuth会員',
+          });
+        }
 
-        // 🤖 自動ロール付与処理
-        const providerToken = session.provider_token;
-        if (providerToken) {
+        // Discordロール自動付与APIの呼び出し
+        if (session?.provider_token) {
           try {
             await fetch('/api/assign-role', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ providerToken }),
+              body: JSON.stringify({ providerToken: session.provider_token }),
             });
-          } catch (e) {
-            console.error('自動ロール付与エラー:', e);
+          } catch (err) {
+            console.error('Role assign error:', err);
           }
         }
-
-        // DBユーザー同期
-        if (discordName) {
-          const { data: existingUser } = await supabase
-            .from('users')
-            .select('*')
-            .eq('discord_name', discordName)
-            .single();
-
-          if (!existingUser) {
-            const { data: newUser } = await supabase
-              .from('users')
-              .insert([{ discord_name: discordName, balance: 1000000, title: '新米馬主' }])
-              .select('*')
-              .single();
-            setDbUser(newUser);
-          } else {
-            setDbUser(existingUser);
-          }
-        }
-      } else {
-        setUser(null);
-        setDbUser(null);
       }
-      setLoading(false);
     };
 
-    initAuthAndSync();
+    checkOAuthSession();
   }, []);
 
-  // データ取得
   useEffect(() => {
-    if (user) {
-      fetchRaces();
-      fetchChat();
-    }
-  }, [user]);
+    fetchRaces();
+    fetchNews();
+    fetchRanking();
+    fetchChat();
+    fetchAuctions();
+    fetchPastResults();
+  }, []);
 
   useEffect(() => {
     if (races.length > 0) {
-      const race = races.find(r => r.race_number === selectedRaceNo);
+      const race = races.find((r) => r.race_number === selectedRaceNo);
       if (race) {
         setCurrentRace(race);
-        fetchHorses(race.id);
+        fetchHorsesAndOnlineOdds(race.id);
       } else {
-        setCurrentRace(null);
+        setCurrentRace({ race_number: selectedRaceNo, title: '特別競走', status: 'open' });
         setHorses([]);
       }
     }
   }, [selectedRaceNo, races]);
 
   useEffect(() => {
-    if (currentRace && dbUser) {
-      fetchUserBets(currentRace.id, dbUser.id);
+    if (currentUser) {
+      fetchMyBets();
+      checkDailyBonus();
     }
-  }, [currentRace, dbUser]);
+  }, [currentUser, selectedRaceNo]);
 
-  const fetchRaces = async () => {
-    const { data } = await supabase.from('races').select('*');
-    if (data) setRaces([...data].sort((a, b) => (a.race_number || 0) - (b.race_number || 0)));
-  };
-
-  const fetchHorses = async (raceId: string) => {
-    const { data } = await supabase.from('horses').select('*').eq('race_id', raceId);
-    if (data) {
-      const sorted = [...data].sort((a, b) => (a.horse_number || 0) - (b.horse_number || 0));
-      setHorses(sorted);
-      if (sorted.length > 0) setSelectedHorse1(String(sorted[0].horse_number));
-      if (sorted.length > 1) setSelectedHorse2(String(sorted[1].horse_number));
-    }
-  };
-
-  const fetchUserBets = async (raceId: string, userId: string) => {
-    const { data } = await supabase.from('bets').select('*').eq('race_id', raceId).eq('user_id', userId);
-    if (data) setUserBets(data);
-  };
-
-  const fetchChat = async () => {
-    const { data } = await supabase.from('inquiries').select('*').eq('title', '【パット雑談チャット】').order('created_at', { ascending: false }).limit(20);
-    if (data) setChatMessages(data.reverse());
-  };
-
-  // 🎮 Discordログイン処理
-  const handleDiscordSignIn = async () => {
+  // 🎮 Discord OAuth ログイン処理（404エラー防止の完全リダイレクト指定）
+  const handleDiscordOAuth = async () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
     await supabase.auth.signInWithOAuth({
       provider: 'discord',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${origin}/auth/callback`,
       },
     });
   };
@@ -144,342 +118,866 @@ export default function Home() {
   // 🚪 ログアウト処理
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    setUser(null);
-    setDbUser(null);
-    window.location.reload();
+    setCurrentUser(null);
   };
 
-  // 🗳️ 馬券購入処理
-  const handlePlaceBet = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentRace || !dbUser) return;
-    if (currentRace.status === 'closed' || currentRace.status === 'finished') {
-      return alert('⚠️ このレースは投票受付を終了しています。');
-    }
-
-    if (!selectedHorse1) return alert('馬を選択してください');
-    if (['馬連', '馬単'].includes(betType) && selectedHorse1 === selectedHorse2) {
-      return alert('2頭丹念な馬を選択してください');
-    }
-
-    if (betAmount <= 0) return alert('正しい購入金額を入力してください');
-    if ((dbUser.balance || 0) < betAmount) {
-      return alert('所持コインが不足しています！');
-    }
-
-    let selectionStr = selectedHorse1;
-    if (['馬連', '馬単'].includes(betType)) {
-      selectionStr = `${selectedHorse1}-${selectedHorse2}`;
-    }
-
-    // 1. 馬券データを保存
-    const { error: betErr } = await supabase.from('bets').insert([{
-      race_id: currentRace.id,
-      user_id: dbUser.id,
-      bet_type: betType,
-      selection: selectionStr,
-      amount: betAmount,
-      is_claimed: false,
-    }]);
-
-    if (betErr) return alert('馬券の購入に失敗しました');
-
-    // 2. 残高引き落とし
-    const newBal = (dbUser.balance || 0) - betAmount;
-    await supabase.from('users').update({ balance: newBal }).eq('id', dbUser.id);
-
-    setDbUser({ ...dbUser, balance: newBal });
-    alert(`🎉 【${selectedRaceNo}R】 ${betType} (${selectionStr}) を ${betAmount.toLocaleString()} G で発注しました！`);
-    fetchUserBets(currentRace.id, dbUser.id);
+  const fetchRaces = async () => {
+    try {
+      const { data } = await supabase.from('races').select('*');
+      if (data) setRaces([...data].sort((a, b) => (a.race_number || 0) - (b.race_number || 0)));
+    } catch (e) { console.error(e); }
   };
 
-  // 💬 チャット送信処理
+  const fetchNews = async () => {
+    try {
+      const { data, error } = await supabase.from('news').select('*');
+      if (data && !error) {
+        setNewsList([...data].reverse());
+      } else {
+        const local = JSON.parse(localStorage.getItem('app_news_list') || '[]');
+        setNewsList(local);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchRanking = async () => {
+    try {
+      const { data } = await supabase.from('users').select('*');
+      if (data) {
+        const sorted = [...data].sort((a, b) => (b.balance || 0) - (a.balance || 0));
+        setRankingUsers(sorted);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchChat = async () => {
+    try {
+      const { data, error } = await supabase.from('inquiries').select('*').eq('title', '【パット雑談チャット】');
+      if (data && !error) {
+        setChatMessages([...data].reverse());
+      } else {
+        const local = JSON.parse(localStorage.getItem('app_paddock_chat') || '[]');
+        setChatMessages(local);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchAuctions = async () => {
+    try {
+      const { data } = await supabase.from('auctions').select('*').eq('status', 'active');
+      if (data) setAuctions(data);
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchPastResults = async () => {
+    try {
+      const { data } = await supabase.from('horse_results').select('*');
+      if (data) {
+        const map: { [key: string]: any[] } = {};
+        data.forEach((r) => {
+          if (!map[r.horse_name]) map[r.horse_name] = [];
+          map[r.horse_name].push(r);
+        });
+        setPastResults(map);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const checkDailyBonus = () => {
+    if (!currentUser) return;
+    const today = new Date().toLocaleDateString();
+    const lastClaim = localStorage.getItem(`daily_bonus_${currentUser.id}`);
+    setHasClaimedBonus(lastClaim === today);
+  };
+
+  const handleClaimDailyBonus = async () => {
+    if (!currentUser || hasClaimedBonus) return;
+    const today = new Date().toLocaleDateString();
+    const bonusAmount = Number(localStorage.getItem('daily_bonus_amount') || 100000);
+
+    const newBal = (currentUser.balance || 0) + bonusAmount;
+    await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
+
+    localStorage.setItem(`daily_bonus_${currentUser.id}`, today);
+    setCurrentUser({ ...currentUser, balance: newBal });
+    setHasClaimedBonus(true);
+    alert(`🎁 本日のログインボーナス【 ${bonusAmount.toLocaleString()} G 】を受け取りました！`);
+    fetchRanking();
+  };
+
   const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() || !dbUser) return;
+    if (!chatInput.trim() || !currentUser) return;
 
-    await supabase.from('inquiries').insert([{
+    const newMsg = {
+      user_id: currentUser.id,
+      discord_name: currentUser.discord_name,
       title: '【パット雑談チャット】',
       content: chatInput,
-      discord_name: dbUser.discord_name,
-    }]);
+    };
+
+    await supabase.from('inquiries').insert([newMsg]);
+
+    const local = JSON.parse(localStorage.getItem('app_paddock_chat') || '[]');
+    localStorage.setItem('app_paddock_chat', JSON.stringify([{ id: Date.now().toString(), ...newMsg, created_at: new Date().toLocaleTimeString() }, ...local]));
 
     setChatInput('');
     fetchChat();
   };
 
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f8fafc', fontFamily: 'sans-serif' }}>
-        <p style={{ fontWeight: 'bold', color: '#1e3a8a' }}>🍏 読み込み中...</p>
-      </div>
-    );
-  }
+  const handlePlaceBid = async (auctionId: string, currentBid: number) => {
+    if (!currentUser) return alert('ログインしてください');
+    if (bidAmountInput <= currentBid) return alert('現在の最高入札額より高く入札してください');
+    if ((currentUser.balance || 0) < bidAmountInput) return alert('所持コインが足りません');
+
+    await supabase.from('auctions').update({
+      current_bid: bidAmountInput,
+      highest_bidder: currentUser.discord_name,
+    }).eq('id', auctionId);
+
+    alert(`🔨 【${bidAmountInput.toLocaleString()} G】で競り（入札）を行いました！現在最高額提示者です！`);
+    fetchAuctions();
+  };
+
+  const fetchHorsesAndOnlineOdds = async (raceId: string) => {
+    const { data: hData } = await supabase.from('horses').select('*').eq('race_id', raceId);
+    const { data: bData } = await supabase.from('bets').select('*').eq('race_id', String(raceId));
+
+    if (hData) {
+      const sorted = [...hData].sort((a, b) => (a.horse_number || 0) - (b.horse_number || 0));
+      const totalAmount = bData ? bData.reduce((sum, b) => sum + Number(b.amount || 0), 0) : 0;
+
+      const dynamicHorses = sorted.map((h) => {
+        let calculatedOdds = Number(h.manual_odds || 5.0);
+        if (totalAmount > 0 && bData) {
+          const horseBets = bData.filter((b) => b.bet_type === '単勝' && String(b.selection) === String(h.horse_number));
+          const horseTotal = horseBets.reduce((sum, b) => sum + Number(b.amount || 0), 0);
+
+          if (horseTotal > 0) {
+            const pool = totalAmount * 0.8;
+            const odds = pool / horseTotal;
+            calculatedOdds = Math.max(1.1, Number(odds.toFixed(1)));
+          }
+        }
+        return { ...h, calculatedOdds };
+      });
+
+      setHorses(dynamicHorses);
+      if (dynamicHorses.length > 0) {
+        setSelectedHorse1(String(dynamicHorses[0].horse_number));
+        if (dynamicHorses.length > 1) setSelectedHorse2(String(dynamicHorses[1].horse_number));
+        if (dynamicHorses.length > 2) setSelectedHorse3(String(dynamicHorses[2].horse_number));
+      }
+    }
+  };
+
+  const fetchMyBets = async () => {
+    if (!currentUser) return;
+    const { data } = await supabase.from('bets').select('*').eq('user_id', String(currentUser.id));
+    if (data) setMyBets([...data].reverse());
+  };
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!discordInput || !pinInput) return alert('名前とPINコードを入力してください');
+
+    const { data: users } = await supabase.from('users').select('*');
+    const exUser = users?.find((u) => u.discord_name === discordInput);
+
+    if (exUser) {
+      if (exUser.pin_code === pinInput) {
+        setCurrentUser(exUser);
+      } else {
+        alert('PINコードが違います');
+      }
+    } else {
+      if (confirm(`「${discordInput}」さんを新規登録しますか？（10,000,000G付与）`)) {
+        const { data: inserted } = await supabase
+          .from('users')
+          .insert([{ discord_name: discordInput, pin_code: pinInput, balance: 10000000 }])
+          .select('*');
+        if (inserted && inserted.length > 0) {
+          setCurrentUser(inserted[0]);
+          alert('🎉 登録完了！ 10,000,000 G 付与！');
+        }
+      }
+    }
+  };
+
+  const handleBuyBet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return alert('ログインしてください');
+    if (!currentRace) return;
+    if (currentRace.status === 'closed' || currentRace.status === 'finished') {
+      return alert('🔒 このレースは投票受付が締め切られています');
+    }
+    if ((currentUser.balance || 0) < betAmount) return alert('所持コインが足りません');
+
+    let selection = selectedHorse1;
+    if (['馬単', '馬連', 'ワイド'].includes(betType)) {
+      if (selectedHorse1 === selectedHorse2) return alert('異なる馬を選択してください');
+      selection = `${selectedHorse1}-${selectedHorse2}`;
+    } else if (['3連複', '3連単'].includes(betType)) {
+      if (new Set([selectedHorse1, selectedHorse2, selectedHorse3]).size < 3) {
+        return alert('3頭とも異なる馬を選択してください');
+      }
+      selection = `${selectedHorse1}-${selectedHorse2}-${selectedHorse3}`;
+    }
+
+    const { error } = await supabase.from('bets').insert([
+      {
+        user_id: String(currentUser.id),
+        race_id: String(currentRace.id),
+        bet_type: String(betType),
+        selection: String(selection),
+        amount: Number(betAmount),
+      },
+    ]);
+
+    if (error) {
+      return alert('購入エラー: ' + error.message);
+    }
+
+    const newBal = (currentUser.balance || 0) - betAmount;
+    await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
+
+    setCurrentUser({ ...currentUser, balance: newBal });
+    alert(`🎫 【${currentRace.race_number}R】${betType} (${selection}) を ${betAmount.toLocaleString()} G で購入しました！`);
+    fetchMyBets();
+    if (currentRace.id) fetchHorsesAndOnlineOdds(currentRace.id);
+    fetchRanking();
+  };
+
+  const isFinished = currentRace?.status === 'finished';
+
+  const resultHorses = [...horses].sort((a, b) => {
+    if (!isFinished) return 0;
+    const rankMap: { [key: string]: number } = {
+      [currentRace?.first_horse]: 1,
+      [currentRace?.second_horse]: 2,
+      [currentRace?.third_horse]: 3,
+      [currentRace?.rank4]: 4,
+      [currentRace?.rank5]: 5,
+      [currentRace?.rank6]: 6,
+      [currentRace?.rank7]: 7,
+      [currentRace?.rank8]: 8,
+      [currentRace?.rank9]: 9,
+    };
+    const rA = rankMap[String(a.horse_number)] || 99;
+    const rB = rankMap[String(b.horse_number)] || 99;
+    return rA - rB;
+  });
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f1f5f9', fontFamily: 'sans-serif', color: '#0f172a' }}>
-      {/* 👑 ヘッダー */}
-      <header style={{ backgroundColor: '#1e3a8a', padding: '12px 16px', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-        <h1 style={{ margin: 0, fontSize: '16px', fontWeight: '900' }}>🍏 青森県競馬 IPAT</h1>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {user && (
-            <>
-              <Link href="/owner" style={{ backgroundColor: '#16a34a', color: '#fff', padding: '6px 10px', borderRadius: '6px', textDecoration: 'none', fontSize: '11px', fontWeight: 'bold' }}>
-                🏇 馬主 ↗
-              </Link>
-              <Link href="/admin" style={{ backgroundColor: '#ca8a04', color: '#fff', padding: '6px 10px', borderRadius: '6px', textDecoration: 'none', fontSize: '11px', fontWeight: 'bold' }}>
-                👑 管理者 ↗
-              </Link>
-            </>
+    <div style={{ backgroundColor: '#f1f5f9', minHeight: '100vh', fontFamily: 'sans-serif', color: '#0f172a' }}>
+      
+      {/* 📱 スマホ対応レスポンシブヘッダー */}
+      <header
+        style={{
+          backgroundColor: '#1e3a8a',
+          color: '#fff',
+          padding: '12px 16px',
+          display: 'flex',
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '12px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ backgroundColor: '#2563eb', color: '#fff', padding: '4px 12px', fontWeight: '900', borderRadius: '20px', fontSize: '13px' }}>
+            🍏 青森県競馬
+          </span>
+          <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#bfdbfe' }}>🎫 即パット</span>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {currentUser ? (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                onClick={handleClaimDailyBonus}
+                disabled={hasClaimedBonus}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '16px',
+                  border: 'none',
+                  fontWeight: 'bold',
+                  cursor: hasClaimedBonus ? 'default' : 'pointer',
+                  backgroundColor: hasClaimedBonus ? '#64748b' : '#eab308',
+                  color: '#fff',
+                  fontSize: '12px',
+                }}
+              >
+                {hasClaimedBonus ? '🎁 受取済' : '🎁 ログボ'}
+              </button>
+
+              <div style={{ backgroundColor: '#1e40af', padding: '6px 14px', borderRadius: '20px', display: 'flex', gap: '8px', alignItems: 'center', border: '1px solid #60a5fa', fontSize: '13px' }}>
+                {currentUser.title && <span style={{ backgroundColor: '#f59e0b', color: '#fff', padding: '2px 6px', borderRadius: '10px', fontSize: '10px', fontWeight: 'bold' }}>{currentUser.title}</span>}
+                <span style={{ fontWeight: 'bold' }}>{currentUser.discord_name}</span>
+                <span style={{ color: '#fef08a', fontWeight: 'bold' }}>{(currentUser.balance || 0).toLocaleString()}G</span>
+              </div>
+
+              <button
+                onClick={handleSignOut}
+                style={{ padding: '6px 12px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                ログアウト
+              </button>
+            </div>
+          ) : (
+            <span style={{ color: '#93c5fd', fontSize: '12px' }}>未ログイン</span>
           )}
+
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <Link href="/owner" style={{ backgroundColor: '#16a34a', color: '#fff', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold', fontSize: '12px' }}>
+              🐴 馬主
+            </Link>
+            <Link href="/admin" style={{ backgroundColor: '#2563eb', color: '#fff', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold', fontSize: '12px' }}>
+              ⚙️ 管理
+            </Link>
+          </div>
         </div>
       </header>
 
-      <main style={{ maxWidth: '900px', margin: '20px auto', padding: '0 12px' }}>
-        {!user ? (
-          /* 🔒 複アカ防止：Discordログイン必須画面 */
-          <div style={{ backgroundColor: '#ffffff', padding: '40px 24px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)', textAlign: 'center', maxWidth: '420px', margin: '40px auto' }}>
-            <h2 style={{ color: '#1e3a8a', margin: '0 0 10px 0', fontSize: '20px', fontWeight: 'bold' }}>🍏 青森県競馬へようこそ！</h2>
-            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px', lineHeight: '1.6' }}>
-              公正なレース運用および複数アカウント（複アカ）防止のため、<br />
-              <strong>Discord アカウントでの認証ログインが必須</strong>となっています。
-            </p>
-
+      {/* メインコンテナ */}
+      <div style={{ maxWidth: '1000px', margin: '16px auto', padding: '0 12px' }}>
+        {!currentUser ? (
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '32px 20px',
+              borderRadius: '20px',
+              textAlign: 'center',
+              maxWidth: '400px',
+              margin: '30px auto',
+              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)',
+              border: '1px solid #e2e8f0',
+            }}
+          >
+            <div style={{ fontSize: '40px', marginBottom: '12px' }}>🎫</div>
+            <h2 style={{ color: '#1e3a8a', margin: '0 0 10px 0', fontSize: '20px' }}>IPAT ログイン</h2>
+            
+            {/* 🎮 Discord OAuth ボタン */}
             <button
-              onClick={handleDiscordSignIn}
+              onClick={handleDiscordOAuth}
               style={{
                 width: '100%',
                 padding: '14px',
                 backgroundColor: '#5865F2',
-                color: '#ffffff',
+                color: '#fff',
+                borderRadius: '10px',
                 fontWeight: 'bold',
                 fontSize: '15px',
                 border: 'none',
-                borderRadius: '12px',
                 cursor: 'pointer',
-                display: 'inline-flex',
+                marginBottom: '16px',
+                display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                boxShadow: '0 4px 12px rgba(88, 101, 242, 0.3)',
               }}
             >
-              🎮 Discord でログイン / 新規登録
+              Discordでログイン
             </button>
+
+            <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '16px' }}>── または 従来方式でログイン ──</div>
+
+            <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <input type="text" placeholder="ユーザー名 (Discord名)" value={discordInput} onChange={(e) => setDiscordInput(e.target.value)} style={inputStyle} />
+              <input type="password" maxLength={4} value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="暗証番号 (4桁)" style={{ ...inputStyle, textAlign: 'center', letterSpacing: '6px' }} />
+              <button type="submit" style={{ padding: '14px', backgroundColor: '#1e3a8a', color: '#fff', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', border: 'none', cursor: 'pointer' }}>
+                ログイン / 新規登録
+              </button>
+            </form>
           </div>
         ) : (
-          /* 🟢 IPATメイン画面 */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0' }}>
             
-            {/* 👤 ユーザー情報 ＆ 残高カード */}
-            <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-              <div>
-                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>ログイン中の馬主・プレイヤー</div>
-                <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  👤 {dbUser?.discord_name || user.user_metadata?.full_name}
-                  {dbUser?.title && (
-                    <span style={{ fontSize: '11px', backgroundColor: '#fef3c7', color: '#d97706', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
-                      🎖️ {dbUser.title}
-                    </span>
-                  )}
-                </div>
-              </div>
+            {/* 📱 横スクロールタブナビゲーション */}
+            <div style={{ display: 'flex', gap: '6px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px', marginBottom: '20px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text={isFinished ? '🏁 結果' : '🎫 投票'} />
+              <TabBtn active={mainTab === 'history'} onClick={() => setMainTab('history')} text={`📋 履歴 (${myBets.length})`} />
+              <TabBtn active={mainTab === 'auction'} onClick={() => setMainTab('auction')} text={`🔨 セリ (${auctions.length})`} />
+              <TabBtn active={mainTab === 'ranking'} onClick={() => setMainTab('ranking')} text="👑 ランキング" />
+              <TabBtn active={mainTab === 'chat'} onClick={() => setMainTab('chat')} text="💬 チャット" />
+              <TabBtn active={mainTab === 'news'} onClick={() => setMainTab('news')} text={`📢 アプデ (${newsList.length})`} />
+            </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>所持コイン</div>
-                  <div style={{ fontSize: '18px', fontWeight: '900', color: '#16a34a' }}>
-                    {(dbUser?.balance || 0).toLocaleString()} <span style={{ fontSize: '12px' }}>G</span>
+            {mainTab === 'bet' && (
+              <div>
+                {/* 1R〜12R切り替えボタン */}
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>レース切り替え (1〜12R):</div>
+                  <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '6px', WebkitOverflowScrolling: 'touch' }}>
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((no) => {
+                      const r = races.find((race) => race.race_number === no);
+                      const isRaceClosed = r?.status === 'closed';
+                      const isRaceFinished = r?.status === 'finished';
+                      const grade = r?.grade || '一般';
+
+                      return (
+                        <button
+                          key={no}
+                          onClick={() => setSelectedRaceNo(no)}
+                          style={{
+                            padding: '8px 14px',
+                            borderRadius: '8px',
+                            border: '1px solid #cbd5e1',
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            fontSize: '13px',
+                            backgroundColor: selectedRaceNo === no ? '#1e3a8a' : '#f8fafc',
+                            color: selectedRaceNo === no ? '#ffffff' : '#475569',
+                          }}
+                        >
+                          {grade !== '一般' && <span style={{ fontSize: '10px', backgroundColor: grade === 'G1' ? '#ef4444' : grade === 'G2' ? '#f59e0b' : '#3b82f6', color: '#fff', padding: '2px 4px', borderRadius: '4px', marginRight: '4px' }}>{grade}</span>}
+                          {no}R {isRaceFinished ? '🏁' : isRaceClosed ? '🔒' : ''}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
-                <button onClick={handleSignOut} style={{ padding: '6px 10px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>
-                  ログアウト
-                </button>
-              </div>
-            </div>
+                {/* レース情報カード */}
+                {currentRace && (
+                  <div style={{ backgroundColor: isFinished ? '#f0fdf4' : '#eff6ff', padding: '14px', borderRadius: '12px', marginBottom: '20px', border: `1px solid ${isFinished ? '#86efac' : '#bfdbfe'}`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        {currentRace.grade && currentRace.grade !== '一般' && (
+                          <span style={{ backgroundColor: currentRace.grade === 'G1' ? '#dc2626' : currentRace.grade === 'G2' ? '#d97706' : '#2563eb', color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '4px' }}>
+                            🏆 {currentRace.grade} 重賞
+                          </span>
+                        )}
+                        <span style={{ fontSize: '17px', fontWeight: 'bold', color: isFinished ? '#16a34a' : '#1e3a8a' }}>
+                          【{currentRace.race_number}R】{currentRace.title || '特別競走'}
+                        </span>
+                      </div>
 
-            {/* 🏁 レース選択タブ (1R〜12R) */}
-            <div style={{ backgroundColor: '#ffffff', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>レースを選択:</div>
-              <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                {Array.from({ length: 12 }, (_, i) => i + 1).map(no => {
-                  const r = races.find(race => race.race_number === no);
-                  const isClosed = r?.status === 'closed' || r?.status === 'finished';
-                  return (
+                      <div>
+                        {isFinished ? (
+                          <span style={{ backgroundColor: '#16a34a', color: '#fff', padding: '4px 10px', borderRadius: '12px', fontWeight: 'bold', fontSize: '12px' }}>🏁 結果確定</span>
+                        ) : currentRace.status === 'closed' ? (
+                          <span style={{ backgroundColor: '#dc2626', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px' }}>🔒 締切</span>
+                        ) : (
+                          <span style={{ backgroundColor: '#2563eb', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px' }}>🟢 受付中</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: '12px', color: '#475569', fontWeight: 'bold' }}>
+                      {currentRace.distance_m || 1800}m / {currentRace.track_condition || '良'} / 天候: {currentRace.weather || '晴'} / 1着賞金: {(currentRace.prize || 1000000).toLocaleString()} G
+                    </div>
+                  </div>
+                )}
+
+                {/* 投票フォーム */}
+                {!isFinished && (
+                  <form onSubmit={handleBuyBet} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
+                      <div>
+                        <label style={labelStyle}>① 券種</label>
+                        <select value={betType} onChange={(e) => setBetType(e.target.value)} style={inputStyle}>
+                          {['単勝', '複勝', '馬単', '馬連', 'ワイド', '3連複', '3連単'].map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+                        <div>
+                          <label style={labelStyle}>1頭目 (1着/軸)</label>
+                          <select value={selectedHorse1} onChange={(e) => setSelectedHorse1(e.target.value)} style={inputStyle}>
+                            {horses.map((h) => (
+                              <option key={h.id} value={h.horse_number}>
+                                {h.horse_number}番 {h.name} ({h.calculatedOdds || h.manual_odds || 5.0}倍)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {['馬単', '馬連', 'ワイド', '3連複', '3連単'].includes(betType) && (
+                          <div>
+                            <label style={labelStyle}>2頭目 (2着/相手)</label>
+                            <select value={selectedHorse2} onChange={(e) => setSelectedHorse2(e.target.value)} style={inputStyle}>
+                              {horses.map((h) => (
+                                <option key={h.id} value={h.horse_number}>
+                                  {h.horse_number}番 {h.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {['3連複', '3連単'].includes(betType) && (
+                          <div>
+                            <label style={labelStyle}>3頭目 (3着)</label>
+                            <select value={selectedHorse3} onChange={(e) => setSelectedHorse3(e.target.value)} style={inputStyle}>
+                              {horses.map((h) => (
+                                <option key={h.id} value={h.horse_number}>
+                                  {h.horse_number}番 {h.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label style={labelStyle}>賭け金 (G)</label>
+                        <input type="number" step="100" min="100" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} style={inputStyle} />
+                      </div>
+                    </div>
+
                     <button
-                      key={no}
-                      onClick={() => setSelectedRaceNo(no)}
+                      type="submit"
+                      disabled={currentRace?.status === 'closed'}
                       style={{
-                        padding: '8px 14px',
-                        borderRadius: '8px',
-                        border: '1px solid #cbd5e1',
+                        width: '100%',
+                        padding: '14px',
+                        backgroundColor: currentRace?.status === 'closed' ? '#94a3b8' : '#2563eb',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '10px',
                         fontWeight: 'bold',
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                        fontSize: '12px',
-                        backgroundColor: selectedRaceNo === no ? '#1e3a8a' : '#f8fafc',
-                        color: selectedRaceNo === no ? '#ffffff' : '#475569',
+                        fontSize: '16px',
+                        cursor: currentRace?.status === 'closed' ? 'not-allowed' : 'pointer',
                       }}
                     >
-                      {no}R {isClosed ? '🔒' : ''}
+                      {currentRace?.status === 'closed' ? '🔒 投票締切中' : '🎫 馬券を購入する'}
                     </button>
-                  );
-                })}
-              </div>
-            </div>
+                  </form>
+                )}
 
-            {/* 📋 対象レースの出走表 ＆ オッズ */}
-            {currentRace && (
-              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <div>
-                    <span style={{ backgroundColor: '#1e3a8a', color: '#fff', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px' }}>
-                      【{selectedRaceNo}R】 {currentRace.grade || '一般'}
-                    </span>
-                    <h2 style={{ display: 'inline', margin: '0 0 0 8px', fontSize: '16px', color: '#1e3a8a', fontWeight: 'bold' }}>
-                      {currentRace.title || '特別競走'}
-                    </h2>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>
-                    {currentRace.distance_m || 1600}m | {currentRace.track_condition || '良'} | {currentRace.weather || '晴'}
-                  </div>
-                </div>
+                {/* 出走表（馬柱） */}
+                <h3 style={{ margin: '0 0 12px 0', color: '#1e3a8a', fontSize: '16px' }}>
+                  {isFinished ? '🏁 レース確定結果' : '🗞️ 出走表 ＆ 近走馬柱'}
+                </h3>
 
-                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '450px' }}>
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                  <table style={{ width: '100%', minWidth: '550px', borderCollapse: 'collapse', fontSize: '12px' }}>
                     <thead>
-                      <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}>
-                        <th style={{ padding: '8px' }}>印</th>
-                        <th>馬番</th>
-                        <th>馬名</th>
-                        <th>性齢</th>
-                        <th>騎手</th>
+                      <tr style={{ backgroundColor: '#1e3a8a', color: '#fff', textAlign: 'left' }}>
+                        <th style={{ padding: '8px', textAlign: 'center', width: '35px' }}>印</th>
+                        <th style={{ padding: '8px', textAlign: 'center', width: '35px' }}>{isFinished ? '着' : '枠'}</th>
+                        <th style={{ width: '130px' }}>馬名 / 騎手</th>
+                        <th>前走 (1走前)</th>
+                        <th>前々走 (2走前)</th>
+                        <th style={{ textAlign: 'right', paddingRight: '12px', width: '70px' }}>オッズ</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {horses.length === 0 ? (
-                        <tr><td colSpan={5} style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>出走馬が登録されていません</td></tr>
-                      ) : (
-                        horses.map(h => (
-                          <tr key={h.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '8px', fontWeight: 'bold', color: '#dc2626' }}>{h.mark || '・'}</td>
-                            <td style={{ fontWeight: 'bold' }}>{h.horse_number}</td>
-                            <td style={{ fontWeight: 'bold', color: '#16a34a' }}>🐎 {h.name}</td>
-                            <td style={{ color: '#64748b' }}>牡{h.age || 3}</td>
-                            <td style={{ color: '#2563eb', fontWeight: 'bold' }}>🏇 {h.jockey || '未定'}</td>
+                      {(isFinished ? resultHorses : horses).map((h, idx) => {
+                        const finishRank = idx + 1;
+                        const hResults = pastResults[h.name] || [];
+                        const last1 = hResults[hResults.length - 1];
+                        const last2 = hResults[hResults.length - 2];
+
+                        return (
+                          <tr key={h.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: '#ffffff' }}>
+                            <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '15px', color: '#dc2626' }}>
+                              {h.mark || (idx === 0 ? '◎' : idx === 1 ? '○' : idx === 2 ? '▲' : '△')}
+                            </td>
+                            <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '13px' }}>
+                              {isFinished ? `${finishRank}着` : h.horse_number}
+                            </td>
+                            <td style={{ padding: '6px 8px' }}>
+                              <div style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '13px' }}>🐎 {h.name}</div>
+                              <div style={{ color: '#2563eb', fontSize: '11px', fontWeight: 'bold' }}>🏇 {h.jockey}</div>
+                            </td>
+
+                            <td style={{ padding: '6px', backgroundColor: '#f8fafc', fontSize: '11px' }}>
+                              {last1 ? (
+                                <div>
+                                  <span style={{ fontWeight: 'bold', color: last1.rank_result === 1 ? '#ca8a04' : '#1e3a8a' }}>
+                                    {last1.rank_result}着 / {last1.race_name}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span style={{ color: '#cbd5e1' }}>前走なし</span>
+                              )}
+                            </td>
+
+                            <td style={{ padding: '6px', backgroundColor: '#f8fafc', fontSize: '11px' }}>
+                              {last2 ? (
+                                <div>
+                                  <span style={{ fontWeight: 'bold', color: last2.rank_result === 1 ? '#ca8a04' : '#1e3a8a' }}>
+                                    {last2.rank_result}着 / {last2.race_name}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span style={{ color: '#cbd5e1' }}>-</span>
+                              )}
+                            </td>
+
+                            <td style={{ textAlign: 'right', paddingRight: '12px' }}>
+                              <span style={{ fontSize: '14px', fontWeight: '900', color: '#dc2626' }}>
+                                {h.calculatedOdds || h.manual_odds || 5.0}倍
+                              </span>
+                            </td>
                           </tr>
-                        ))
-                      )}
+                        );
+                      })}
                     </tbody>
                   </table>
+                </div>
+
+                {isFinished && (
+                  <div style={{ marginTop: '24px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                    <h4 style={{ margin: '0 0 12px 0', color: '#16a34a', fontSize: '16px', fontWeight: 'bold' }}>
+                      💰 確定 払戻金（配当）一覧
+                    </h4>
+                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                      <table style={{ width: '100%', minWidth: '400px', borderCollapse: 'collapse', fontSize: '12px', backgroundColor: '#fff', border: '1px solid #cbd5e1' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: '#16a34a', color: '#fff', textAlign: 'left' }}>
+                            <th style={{ padding: '8px 12px' }}>券種</th>
+                            <th>馬番・組み合わせ</th>
+                            <th style={{ textAlign: 'right', paddingRight: '12px' }}>払戻金 (100G)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '8px 12px', fontWeight: 'bold' }}>単勝</td><td style={{ fontWeight: 'bold', color: '#dc2626' }}>{currentRace.first_horse}番</td><td style={{ textAlign: 'right', paddingRight: '12px', fontWeight: 'bold', color: '#16a34a' }}>350 G</td></tr>
+                          <tr style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '8px 12px', fontWeight: 'bold' }}>馬連</td><td style={{ fontWeight: 'bold' }}>{currentRace.first_horse} - {currentRace.second_horse}</td><td style={{ textAlign: 'right', paddingRight: '12px', fontWeight: 'bold', color: '#16a34a' }}>850 G</td></tr>
+                          <tr style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '8px 12px', fontWeight: 'bold' }}>馬単</td><td style={{ fontWeight: 'bold' }}>{currentRace.first_horse} → {currentRace.second_horse}</td><td style={{ textAlign: 'right', paddingRight: '12px', fontWeight: 'bold', color: '#16a34a' }}>1,500 G</td></tr>
+                          <tr style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '8px 12px', fontWeight: 'bold' }}>3連複</td><td style={{ fontWeight: 'bold' }}>{currentRace.first_horse} - {currentRace.second_horse} - {currentRace.third_horse}</td><td style={{ textAlign: 'right', paddingRight: '12px', fontWeight: 'bold', color: '#16a34a' }}>2,200 G</td></tr>
+                          <tr><td style={{ padding: '8px 12px', fontWeight: 'bold' }}>3連単</td><td style={{ fontWeight: 'bold', color: '#dc2626' }}>{currentRace.first_horse} → {currentRace.second_horse} → {currentRace.third_horse}</td><td style={{ textAlign: 'right', paddingRight: '12px', fontWeight: 'bold', color: '#16a34a' }}>6,500 G</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {mainTab === 'auction' && (
+              <div>
+                <h3 style={{ margin: '0 0 16px 0', color: '#d97706', fontSize: '18px' }}>🔨 競走馬 セリ市会場</h3>
+                {auctions.length === 0 ? (
+                  <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                    現在出品中の競走馬はありません。
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' }}>
+                    {auctions.map((a) => (
+                      <div key={a.id} style={{ backgroundColor: a.is_official ? '#fefce8' : '#f8fafc', padding: '16px', borderRadius: '12px', border: `2px solid ${a.is_official ? '#eab308' : '#cbd5e1'}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span style={{ fontWeight: 'bold', fontSize: '16px', color: '#d97706' }}>🐎 {a.horse_name}</span>
+                          {a.is_official && <span style={{ backgroundColor: '#dc2626', color: '#fff', fontSize: '10px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '8px' }}>👑 運営公式</span>}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
+                          <div>出品者: <strong>{a.seller_name}</strong></div>
+                          <div>現在最高額: <strong style={{ color: '#16a34a', fontSize: '15px' }}>{(a.current_bid || 0).toLocaleString()} G</strong></div>
+                          <div>最高額提示者: <strong>{a.highest_bidder}</strong> 様</div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <input type="number" step="100000" min={a.current_bid + 100000} value={bidAmountInput} onChange={e => setBidAmountInput(Number(e.target.value))} style={inputStyle} />
+                          <button onClick={() => handlePlaceBid(a.id, a.current_bid)} style={{ padding: '8px 14px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            入札 🔨
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {mainTab === 'ranking' && (
+              <div>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '18px' }}>👑 資産ランキング ＆ 称号者</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {rankingUsers.map((u, index) => {
+                    const rank = index + 1;
+                    const crown = rank === 1 ? '👑 金冠' : rank === 2 ? '🥈 銀冠' : rank === 3 ? '🥉 銅冠' : `${rank}位`;
+                    const isMe = u.id === currentUser?.id;
+
+                    return (
+                      <div
+                        key={u.id}
+                        style={{
+                          backgroundColor: isMe ? '#eff6ff' : '#f8fafc',
+                          padding: '12px 16px',
+                          borderRadius: '12px',
+                          border: `2px solid ${rank === 1 ? '#eab308' : isMe ? '#2563eb' : '#cbd5e1'}`,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '15px', fontWeight: '900', color: rank === 1 ? '#ca8a04' : '#475569', width: '60px' }}>
+                            {crown}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            {u.title && <span style={{ backgroundColor: '#f59e0b', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '8px', fontWeight: 'bold' }}>{u.title}</span>}
+                            <span style={{ fontWeight: 'bold', fontSize: '15px', color: '#0f172a' }}>
+                              👤 {u.discord_name}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '15px', fontWeight: '900', color: '#16a34a' }}>
+                          {(u.balance || 0).toLocaleString()} G
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            {/* 🗳️ 即パット馬券購入フォーム */}
-            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '2px solid #2563eb' }}>
-              <h3 style={{ margin: '0 0 12px 0', color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
-                🗳️ 即パット 馬券購入【{selectedRaceNo}R】
-              </h3>
-
-              {currentRace?.status === 'closed' || currentRace?.status === 'finished' ? (
-                <div style={{ padding: '20px', textAlign: 'center', backgroundColor: '#fef2f2', color: '#991b1b', borderRadius: '10px', fontWeight: 'bold' }}>
-                  🔒 このレースの投票受付は締め切られました
-                </div>
-              ) : (
-                <form onSubmit={handlePlaceBet} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                    <div>
-                      <label style={labelStyle}>式別</label>
-                      <select value={betType} onChange={e => setBetType(e.target.value)} style={inputStyle}>
-                        <option value="単勝">単勝</option>
-                        <option value="複勝">複勝</option>
-                        <option value="馬連">馬連</option>
-                        <option value="馬単">馬単</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label style={labelStyle}>{['馬連', '馬単'].includes(betType) ? '1頭目 / 軸' : '選択馬'}</label>
-                      <select value={selectedHorse1} onChange={e => setSelectedHorse1(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold' }}>
-                        {horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}
-                      </select>
-                    </div>
-
-                    {['馬連', '馬単'].includes(betType) && (
-                      <div>
-                        <label style={labelStyle}>2頭目 / 相手</label>
-                        <select value={selectedHorse2} onChange={e => setSelectedHorse2(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold' }}>
-                          {horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <label style={labelStyle}>購入金額 (G)</label>
-                    <input type="number" step="1000" min="100" value={betAmount} onChange={e => setBetAmount(Number(e.target.value))} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }} required />
-                  </div>
-
-                  <button type="submit" style={{ padding: '14px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
-                    発注する 🗳️
+            {mainTab === 'chat' && (
+              <div>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '18px' }}>💬 パドック予想 ＆ 雑談掲示板</h3>
+                <form onSubmit={handleSendChat} style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+                  <input
+                    type="text"
+                    placeholder="予想やパドックの感想を投稿しよう！"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
+                  <button type="submit" style={{ padding: '10px 18px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    投稿 💬
                   </button>
                 </form>
-              )}
-            </div>
 
-            {/* 📝 購入履歴 */}
-            {userBets.length > 0 && (
-              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '14px', fontWeight: 'bold' }}>📝 【{selectedRaceNo}R】 購入済み馬券</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {userBets.map(b => (
-                    <div key={b.id} style={{ backgroundColor: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <span style={{ fontWeight: 'bold', color: '#2563eb', fontSize: '13px' }}>[{b.bet_type}] {b.selection}</span>
-                        <div style={{ fontSize: '11px', color: '#64748b' }}>購入額: {Number(b.amount).toLocaleString()} G</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {chatMessages.map((m) => (
+                    <div key={m.id} style={{ backgroundColor: '#f8fafc', padding: '12px 16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span style={{ fontWeight: 'bold', color: '#1e3a8a', fontSize: '13px' }}>👤 {m.discord_name}</span>
+                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>{m.created_at || 'たった今'}</span>
                       </div>
-                      <div>
-                        {b.payout_amount > 0 ? (
-                          <span style={{ color: '#16a34a', fontWeight: 'bold', fontSize: '13px' }}>🎉 的中 +{b.payout_amount.toLocaleString()} G</span>
-                        ) : b.payout_amount === 0 && currentRace?.status === 'finished' ? (
-                          <span style={{ color: '#dc2626', fontWeight: 'bold', fontSize: '12px' }}>不的中</span>
-                        ) : (
-                          <span style={{ color: '#ca8a04', fontWeight: 'bold', fontSize: '12px' }}>判定待ち</span>
-                        )}
-                      </div>
+                      <div style={{ fontSize: '13px', color: '#334155' }}>{m.content}</div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* 💬 パドック雑談チャット */}
-            <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '15px', fontWeight: 'bold' }}>💬 パドック雑談チャット</h3>
-              <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '10px', maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px', border: '1px solid #cbd5e1' }}>
-                {chatMessages.length === 0 ? <div style={{ fontSize: '12px', color: '#94a3b8', textAlign: 'center' }}>メッセージはありません</div> : (
-                  chatMessages.map(m => (
-                    <div key={m.id} style={{ fontSize: '12px' }}>
-                      <strong style={{ color: '#1e3a8a' }}>{m.discord_name}: </strong>
-                      <span style={{ color: '#334155' }}>{m.content}</span>
-                    </div>
-                  ))
+            {mainTab === 'history' && (
+              <div>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '18px' }}>📋 馬券購入履歴・的中一覧</h3>
+                {myBets.length === 0 ? (
+                  <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                    まだ購入した馬券がありません。
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {myBets.map((b) => {
+                      const isClaimed = b.is_claimed;
+                      const payout = Number(b.payout_amount || 0);
+                      const isWin = isClaimed && payout > 0;
+                      const isLose = isClaimed && payout === 0;
+
+                      return (
+                        <div
+                          key={b.id}
+                          style={{
+                            backgroundColor: isWin ? '#fefce8' : '#f8fafc',
+                            padding: '14px 16px',
+                            borderRadius: '12px',
+                            border: `2px solid ${isWin ? '#eab308' : isLose ? '#cbd5e1' : '#bfdbfe'}`,
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#1e3a8a' }}>
+                              🎫 【{b.bet_type}】 {b.selection}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                              購入額: {Number(b.amount).toLocaleString()} G
+                            </div>
+                          </div>
+
+                          <div>
+                            {!isClaimed ? (
+                              <span style={{ backgroundColor: '#2563eb', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px' }}>
+                                ⏳ 確定待ち
+                              </span>
+                            ) : isWin ? (
+                              <div style={{ textAlign: 'right' }}>
+                                <span style={{ backgroundColor: '#16a34a', color: '#fff', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px' }}>
+                                  🎯 的中！
+                                </span>
+                                <div style={{ fontSize: '16px', fontWeight: '900', color: '#16a34a', marginTop: '2px' }}>
+                                  + {payout.toLocaleString()} G
+                                </div>
+                              </div>
+                            ) : (
+                              <span style={{ backgroundColor: '#94a3b8', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px' }}>
+                                ❌ 不的中
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-              <form onSubmit={handleSendChat} style={{ display: 'flex', gap: '6px' }}>
-                <input type="text" placeholder="パドックの感想や予想をつぶやく..." value={chatInput} onChange={e => setChatInput(e.target.value)} style={inputStyle} />
-                <button type="submit" style={{ backgroundColor: '#1e3a8a', color: '#fff', border: 'none', padding: '0 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px', whiteSpace: 'nowrap' }}>送信</button>
-              </form>
-            </div>
+            )}
+
+            {mainTab === 'news' && (
+              <div>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '18px' }}>📢 アプデ・お知らせ一覧</h3>
+                {newsList.length === 0 ? (
+                  <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                    現在お知らせはありません。
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {newsList.map((n) => (
+                      <div key={n.id} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <span style={{ fontWeight: 'bold', fontSize: '16px', color: '#1e3a8a' }}>📢 {n.title}</span>
+                          <span style={{ fontSize: '11px', color: '#64748b' }}>{n.date || '本日'}</span>
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#334155', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
+                          {n.content}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }
 
-const labelStyle = { display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '3px', fontWeight: 'bold' };
-const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', color: '#0f172a', fontSize: '13px' };
+function TabBtn({ active, onClick, text }: { active: boolean; onClick: () => void; text: string }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '8px 14px',
+        borderRadius: '8px',
+        border: '1px solid #cbd5e1',
+        fontWeight: 'bold',
+        fontSize: '13px',
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+        backgroundColor: active ? '#1e3a8a' : '#fff',
+        color: active ? '#fff' : '#475569',
+      }}
+    >
+      {text}
+    </button>
+  );
+}
+
+const labelStyle = { display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px', fontWeight: 'bold' };
+const inputStyle = { padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', width: '100%', backgroundColor: '#fff' };
