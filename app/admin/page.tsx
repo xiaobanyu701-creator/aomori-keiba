@@ -112,7 +112,7 @@ export default function SuperAdminConsole() {
               title: title,
               description: description,
               color: color,
-              footer: { text: '🍏 青森県競馬 公式実況システム' },
+              footer: { text: '🍏 青森県競馬 公式AI実況システム' },
               timestamp: new Date().toISOString(),
             },
           ],
@@ -464,7 +464,26 @@ export default function SuperAdminConsole() {
     fetchAuctions(); fetchHorseMasters();
   };
 
-  // 🤖 AI自動オッズ計算・一括設定処理
+  // 🏆 6. AIライバル馬主（CPU強豪馬）自動エントリー機能
+  const handleAddAiRivalHorse = async () => {
+    if (!currentRace) return;
+    const rivals = ['[AI馬主] 帝王ペガサス', '[AI馬主] 疾風シャドー', '[AI馬主] 覇王カイザー', '[AI馬主] イナズマライジン'];
+    const nextNo = horses.length + 1;
+    const rivalName = rivals[Math.floor(Math.random() * rivals.length)];
+
+    await supabase.from('horses').insert([{
+      race_id: currentRace.id,
+      horse_number: nextNo,
+      name: rivalName,
+      jockey: 'ルメール',
+      manual_odds: 2.5,
+    }]);
+
+    alert(`🏆 【AIライバル陣営】 「${rivalName}」が ${nextNo}番枠に自動参戦しました！`);
+    fetchHorses(currentRace.id);
+  };
+
+  // 🤖 7. AI自動オッズ計算・一括設定処理
   const handleAutoCalculateOdds = async () => {
     if (!horses || horses.length === 0) return alert('出走馬が登録されていません');
     if (!confirm(`【${selectedRaceNo}R】の全出走馬（${horses.length}頭）の単勝オッズをAI自動計算して一括更新しますか？`)) return;
@@ -797,10 +816,10 @@ export default function SuperAdminConsole() {
     if (currentRace?.id) fetchHorses(currentRace.id);
   };
 
-  // 🏁 着順確定 ＆ 配当金清算 ＆ Discord自動速報
+  // 🎙️ 5. AI実況速報機能付き 🏁 着順確定 ＆ 配当金清算 ＆ Discord自動速報
   const handleSettleFullRace = async () => {
     if (!currentRace || !rank1) return alert('最低限1着の馬を選択してください');
-    if (!confirm(`【${selectedRaceNo}R】の結果を確定し、的中者全員へ配当金を自動振込＆Discordへ速報を送信しますか？`)) return;
+    if (!confirm(`【${selectedRaceNo}R】の結果を確定し、的中者全員へ配当金を自動振込＆AI実況Discord速報を送信しますか？`)) return;
 
     const h1 = horses.find(h => String(h.horse_number) === String(rank1));
     const h2 = horses.find(h => String(h.horse_number) === String(rank2));
@@ -876,7 +895,12 @@ export default function SuperAdminConsole() {
       first_horse: rank1, second_horse: rank2, third_horse: rank3, rank4, rank5, rank6, rank7, rank8, rank9
     }).eq('id', currentRace.id);
 
+    // 🎙️ AI実況ダイジェスト文の動的生成
+    const aiDigest = `🎙️ **【AI実況ダイジェスト】**\n「最後の直線、激しい競り合いの中から堂々抜け出したのは **${rank1}番 ${h1 ? h1.name : ''}**！猛烈な追い上げを見せた **${rank2 ? `${rank2}番 ${h2 ? h2.name : ''}` : ''}** を振り切って見事栄冠に輝きました！」`;
+
     const desc = `
+${aiDigest}
+
 🥇 **1着:** ${rank1}番 ${h1 ? h1.name : ''}
 🥈 **2着:** ${rank2 ? `${rank2}番 ${h2 ? h2.name : ''}` : '-'}
 🥉 **3着:** ${rank3 ? `${rank3}番 ${h3 ? h3.name : ''}` : '-'}
@@ -888,9 +912,9 @@ export default function SuperAdminConsole() {
 
 🎯 的中された皆様おめでとうございます！配当金が各口座へ自動振込されました！
 `;
-    sendDiscordNotification(`🏆 【${selectedRaceNo}R ${currentRace.title || '特別競走'}】 レース確定速報！`, desc, 0x16a34a);
+    sendDiscordNotification(`🏆 【${selectedRaceNo}R ${currentRace.title || '特別競走'}】 AIレース確定速報！`, desc, 0x16a34a);
 
-    alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！\nDiscordへの結果速報も自動送信されました！`); 
+    alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！\nAI自動実況付きDiscord速報も自動送信されました！`); 
     fetchRaces(); fetchUsers(); fetchHorseMasters();
   };
 
@@ -1245,35 +1269,75 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 🐴 TAB: 出走馬追加 ＆ AI自動オッズ */}
+          {/* 🐴 TAB: 出走馬追加 ＆ 🤖 AI機能群（オッズ・予想印・AIライバル馬主） */}
           {adminTab === 'horses' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '2px solid #2563eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '2px solid #2563eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                 <div>
-                  <h3 style={{ margin: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>🤖 【{selectedRaceNo}R】 AI自動オッズ ＆ 印</h3>
+                  <h3 style={{ margin: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>🤖 【{selectedRaceNo}R】 AI予想印 ＆ オッズ ＆ ライバル参戦</h3>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>AIがオッズ計算やCPU強豪馬のエントリーを自動で行います</div>
                 </div>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button onClick={handleAutoCalculateOdds} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🤖 AI自動オッズ</button>
-                  <button onClick={handleAutoAssignMarks} style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🗞️ AI予想印</button>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  <button onClick={handleAutoCalculateOdds} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                    📈 AIリアルタイムオッズ
+                  </button>
+                  <button onClick={handleAutoAssignMarks} style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                    🗞️ AI予想印設定
+                  </button>
+                  <button onClick={handleAddAiRivalHorse} style={{ backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                    🏆 AIライバル(CPU)参戦
+                  </button>
                 </div>
               </div>
 
+              <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ marginTop: 0, color: '#16a34a', fontWeight: 'bold', fontSize: '16px' }}>➕ 【{selectedRaceNo}R】 出走馬追加</h3>
+                <form onSubmit={handleAddHorse} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr', gap: '8px' }}>
+                    <div><label style={labelStyle}>馬番</label><input type="number" value={newHorseNumber} onChange={e=>setNewHorseNumber(Number(e.target.value))} style={inputStyle} /></div>
+                    <div>
+                      <label style={labelStyle}>馬名</label>
+                      <select value={newHorseName} onChange={e=>setNewHorseName(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }}>
+                        {activeHorseMasters.map(h => <option key={h.id} value={h.name}>🐎 {h.name}</option>)}
+                      </select>
+                    </div>
+                    <div><label style={labelStyle}>騎手</label><select value={newJockey} onChange={e=>setNewJockey(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#2563eb' }}>{jockeyList.map(j => <option key={j.id} value={j.name}>🏇 {j.name}</option>)}</select></div>
+                  </div>
+                  <button type="submit" style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>出走確定 ➕</button>
+                </form>
+              </div>
+
               <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                  <thead><tr style={{ backgroundColor: '#f8fafc', textAlign: 'left' }}><th style={{ padding: '8px' }}>番</th><th>印</th><th>馬名</th><th>騎手</th><th>単勝オッズ</th><th>操作</th></tr></thead>
-                  <tbody>
-                    {horses.map(h => (
-                      <tr key={h.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '8px', fontWeight: 'bold' }}>{h.horse_number}</td>
-                        <td>{h.mark || '・'}</td>
-                        <td style={{ fontWeight: 'bold', color: '#16a34a' }}>🐎 {h.name}</td>
-                        <td style={{ color: '#2563eb', fontWeight: 'bold' }}>🏇 {h.jockey}</td>
-                        <td style={{ fontWeight: 'bold', color: '#dc2626' }}>{h.manual_odds || 5.0}倍</td>
-                        <td><button onClick={()=>handleDeleteHorse(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>削除</button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>📋 出走馬 ＆ オッズ一覧</h3>
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '450px' }}>
+                    <thead><tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}><th style={{ padding: '8px' }}>番</th><th>印</th><th>馬名</th><th>騎手</th><th>単勝オッズ</th><th>操作</th></tr></thead>
+                    <tbody>
+                      {horses.map(h => (
+                        <tr key={h.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px', fontWeight: 'bold' }}>{h.horse_number}</td>
+                          <td>
+                            <select value={h.mark || '・'} onChange={e => handleUpdateHorseDetail(h.id, 'mark', e.target.value)} style={{ padding: '2px', fontWeight: 'bold', color: '#dc2626' }}>
+                              {['◎', '○', '▲', '△', '×', '・'].map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                          </td>
+                          <td style={{ fontWeight: 'bold', color: '#16a34a' }}>🐎 {h.name}</td>
+                          <td style={{ color: '#2563eb', fontWeight: 'bold' }}>🏇 {h.jockey}</td>
+                          <td>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={h.manual_odds || 5.0}
+                              onChange={e => handleUpdateHorseDetail(h.id, 'manual_odds', Number(e.target.value))}
+                              style={{ width: '60px', padding: '4px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: 'bold', color: '#dc2626' }}
+                            /> 倍
+                          </td>
+                          <td><button onClick={()=>handleDeleteHorse(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>削除</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -1445,15 +1509,14 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 🏆 TAB: 着順確定 ＆ 確定取り消し */}
+          {/* 🏆 TAB: 着順確定 ＆ 確定取り消し ＆ 🎙️ AI自動実況 */}
           {adminTab === 'settle' && (
             <div style={{ border: '2px solid #2563eb', padding: '20px', borderRadius: '16px', backgroundColor: '#ffffff' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <h3 style={{ color: '#1e3a8a', margin: 0, fontWeight: 'bold', fontSize: '18px' }}>
-                  🏆 【{selectedRaceNo}R】 着順確定（1着〜9着）
+                  🏆 【{selectedRaceNo}R】 着順確定（1着〜9着） ＆ AI自動実況
                 </h3>
                 
-                {/* 着順確定取り消しボタン */}
                 <button
                   onClick={handleUnsettleRace}
                   style={{ backgroundColor: '#ca8a04', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
@@ -1475,7 +1538,7 @@ export default function SuperAdminConsole() {
                 onClick={handleSettleFullRace} 
                 style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '16px', fontSize: '16px', fontWeight: 'bold', borderRadius: '10px', cursor: 'pointer' }}
               >
-                🏁 結果確定・配当自動振込 ＆ Discord速報 📢
+                🏁 結果確定・配当自動振込 ＆ AI自動実況Discord速報 🎙️
               </button>
             </div>
           )}
