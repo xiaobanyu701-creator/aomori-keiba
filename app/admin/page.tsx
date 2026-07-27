@@ -8,7 +8,7 @@ export default function SuperAdminConsole() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
 
-  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit' | 'news_edit' | 'pedigree_admin' | 'chat_admin' | 'auction_admin' | 'bulk_import' | 'pool_monitor'>('users');
+  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit' | 'news_edit' | 'pedigree_admin' | 'chat_admin' | 'auction_admin' | 'bulk_import' | 'pool_monitor' | 'race_requests_admin'>('users');
 
   const [races, setRaces] = useState<any[]>([]);
   const [selectedRaceNo, setSelectedRaceNo] = useState<number>(1);
@@ -18,6 +18,9 @@ export default function SuperAdminConsole() {
   
   const [jockeyList, setJockeyList] = useState<any[]>([]);
   const [horseMasterList, setHorseMasterList] = useState<any[]>([]);
+
+  // 📨 出走申請リスト用ステート
+  const [raceRequests, setRaceRequests] = useState<any[]>([]);
 
   const [addJockeyName, setAddJockeyName] = useState('');
   const [addHorseMasterName, setAddHorseMasterName] = useState('');
@@ -83,7 +86,7 @@ export default function SuperAdminConsole() {
 
   useEffect(() => { 
     if (isAuthenticated) { 
-      fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters(); fetchNews(); fetchChat(); fetchAllBets();
+      fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters(); fetchNews(); fetchChat(); fetchAllBets(); fetchRaceRequests();
       const cfg = Number(localStorage.getItem('daily_bonus_amount') || 100000);
       setDailyBonusConfig(cfg);
       const sRate = Number(localStorage.getItem('training_success_rate') || 70);
@@ -215,7 +218,62 @@ export default function SuperAdminConsole() {
     if (data) setAllBets(data);
   };
 
-  // ⚡ 機能2: 12R一括ステータス変更（一括オープン / 一括締切）
+  const fetchRaceRequests = async () => {
+    const { data } = await supabase.from('race_requests').select('*').eq('status', 'pending');
+    if (data) setRaceRequests(data.reverse());
+  };
+
+  // 🟢 ワンタップで出走申請を「承認・自動レース登録」する神処理
+  const handleApproveRaceRequest = async (req: any) => {
+    // 対象レースの情報を取得
+    let targetRace = races.find(r => r.race_number === req.target_race_no);
+    let raceId = targetRace?.id;
+
+    // もしレースがまだ未作成なら自動作成
+    if (!raceId) {
+      const { data: insertedRace } = await supabase.from('races').insert([{
+        race_number: req.target_race_no,
+        title: `${req.target_race_no}R 特別競走`,
+        status: 'open',
+      }]).select('*');
+      if (insertedRace && insertedRace.length > 0) {
+        raceId = insertedRace[0].id;
+      }
+    }
+
+    if (!raceId) return alert('レース情報の取得に失敗しました');
+
+    // 現在の出走馬一覧を取得して次の馬番を割り当て
+    const { data: exHorses } = await supabase.from('horses').select('*').eq('race_id', raceId);
+    const nextHorseNo = (exHorses?.length || 0) + 1;
+
+    // 出走表へ全自動追加
+    await supabase.from('horses').insert([{
+      race_id: raceId,
+      horse_number: nextHorseNo,
+      name: req.horse_name,
+      jockey: req.preferred_jockey,
+      age: 3,
+    }]);
+
+    // 馬マスターのステータス更新
+    await supabase.from('horse_masters').update({ status: `出走(${req.target_race_no}R)` }).eq('name', req.horse_name);
+
+    // 申請ステータスを完了へ
+    await supabase.from('race_requests').update({ status: 'approved' }).eq('id', req.id);
+
+    alert(`🟢 「${req.horse_name}」を 【${req.target_race_no}R ${nextHorseNo}番 (騎手: ${req.preferred_jockey})】 にワンタップで自動登録しました！`);
+    fetchRaceRequests(); fetchRaces();
+  };
+
+  // 🔴 申請を拒否
+  const handleRejectRaceRequest = async (req: any) => {
+    if (!confirm(`「${req.horse_name}」の出走申請を拒否しますか？`)) return;
+    await supabase.from('race_requests').update({ status: 'rejected' }).eq('id', req.id);
+    await supabase.from('horse_masters').update({ status: '現役' }).eq('name', req.horse_name);
+    fetchRaceRequests();
+  };
+
   const handleBulkSetRaceStatus = async (status: 'open' | 'closed') => {
     const label = status === 'open' ? '🟢 一括受付開始' : '🔒 一括投票締切';
     if (!confirm(`1R〜12Rのすべてのレースを【 ${label} 】に変更しますか？`)) return;
@@ -227,7 +285,6 @@ export default function SuperAdminConsole() {
     fetchRaces();
   };
 
-  // 🧹 機能2: 開催一括リセット・クリア
   const handleResetAllRaces = async () => {
     if (!confirm('⚠️ 警告: 1R〜12Rのすべての「出走馬」「投票データ」「着順確定」をまっさらにリセットしますか？')) return;
     await supabase.from('horses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
@@ -239,11 +296,9 @@ export default function SuperAdminConsole() {
     fetchRaces(); fetchAllBets();
   };
 
-  // 📝 機能4: 出走馬テキスト一括登録
   const handleBulkImportHorses = async () => {
     if (!bulkImportText.trim() || !currentRace?.id) return alert('テキストを入力し、対象レースを選択してください');
     
-    // 行ごとに分解: 例 "1,カマクラドリーム,武豊,3"
     const lines = bulkImportText.trim().split('\n');
     let count = 0;
 
@@ -611,6 +666,7 @@ export default function SuperAdminConsole() {
         
         <div style={{ display: 'flex', flexDirection: 'column', padding: '16px 8px', gap: '8px', flex: 1 }}>
           <div style={{ fontSize: '12px', color: '#93c5fd', fontWeight: 'bold', padding: '0 8px', marginTop: '8px' }}>マスター・全体管理</div>
+          <SideButton active={adminTab === 'race_requests_admin'} onClick={() => setAdminTab('race_requests_admin')} icon="📨" text={`馬主出走申請 (${raceRequests.length})`} />
           <SideButton active={adminTab === 'users'} onClick={() => setAdminTab('users')} icon="👤" text="プレイヤー管理 (お金/称号/削除)" />
           <SideButton active={adminTab === 'pool_monitor'} onClick={() => setAdminTab('pool_monitor')} icon="📊" text="投票プール＆偏りリアルタイム監視" />
           <SideButton active={adminTab === 'bulk_import'} onClick={() => setAdminTab('bulk_import')} icon="📝" text="出走馬テキスト爆速一括登録" />
@@ -656,11 +712,57 @@ export default function SuperAdminConsole() {
 
         <div style={{ maxWidth: '1000px' }}>
 
-          {/* ⚡ 機能2: 12R一括コントロール ＆ 開催リセット ＆ 個別条件設定 */}
+          {/* 📨 TAB: 新設 馬主からの出走・主戦騎手 申請＆ワンタップ自動登録 */}
+          {adminTab === 'race_requests_admin' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '2px solid #2563eb' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h2 style={{ margin: 0, color: '#1e3a8a', fontSize: '20px', fontWeight: 'bold' }}>
+                  📨 馬主からの出走 ＆ 主戦騎手 エントリー申請リスト ({raceRequests.length}件)
+                </h2>
+                <button onClick={fetchRaceRequests} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
+                  🔄 更新
+                </button>
+              </div>
+
+              {raceRequests.length === 0 ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                  現在未処理の出走申請はありません。
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {raceRequests.map(req => (
+                    <div key={req.id} style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ backgroundColor: '#1e3a8a', color: '#fff', padding: '4px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '15px' }}>
+                            【{req.target_race_no}R】
+                          </span>
+                          <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#16a34a' }}>🐎 {req.horse_name}</span>
+                          <span style={{ fontSize: '13px', color: '#475569' }}>(馬主: <strong>{req.owner_name}</strong>)</span>
+                        </div>
+                        <div style={{ marginTop: '8px', fontSize: '14px', color: '#2563eb', fontWeight: 'bold' }}>
+                          希望主戦騎手: 🏇 {req.preferred_jockey}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button onClick={() => handleApproveRaceRequest(req)} style={{ padding: '12px 20px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
+                          承認 ＆ ワンタップ出走追加 🟢
+                        </button>
+                        <button onClick={() => handleRejectRaceRequest(req)} style={{ padding: '12px 16px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
+                          拒否 🔴
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ⚡ 12R一括コントロール ＆ 開催リセット ＆ 個別条件設定 */}
           {adminTab === 'race' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              
-              {/* ⚡ 一括操作コントロール */}
               <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '16px', border: '2px solid #2563eb' }}>
                 <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '18px' }}>⚡ 1R〜12R 一括状態コントロール ＆ 開催クリア</h3>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -676,7 +778,6 @@ export default function SuperAdminConsole() {
                 </div>
               </div>
 
-              {/* 🛠️ 個別レース条件設定 */}
               <div style={{ backgroundColor: '#ffffff', padding: '28px', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '650px' }}>
                 <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '20px' }}>🛠️ 【{selectedRaceNo}R】 レース条件 ＆ レース名 ＆ G1重賞格付け ＆ 締切</h3>
                 
@@ -725,7 +826,7 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 📊 機能3: リアルタイム総プール ＆ 投票偏り監視パネル */}
+          {/* 📊 リアルタイム総プール ＆ 投票偏り監視パネル */}
           {adminTab === 'pool_monitor' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -756,7 +857,7 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 📝 機能4: 出走馬テキスト一括登録 */}
+          {/* 📝 出走馬テキスト一括登録 */}
           {adminTab === 'bulk_import' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0', maxWidth: '650px' }}>
               <h2 style={{ margin: '0 0 12px 0', color: '#1e3a8a', fontSize: '20px', fontWeight: 'bold' }}>

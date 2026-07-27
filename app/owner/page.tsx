@@ -15,9 +15,15 @@ export default function OwnerPage() {
   const [jockeyList, setJockeyList] = useState<any[]>([]);
   const [pedigreeList, setPedigreeList] = useState<any[]>([]);
 
+  // 🧬 スタホ配合用ステート
   const [selectedSire, setSelectedSire] = useState('');
   const [selectedDam, setSelectedDam] = useState('');
   const [foalNameInput, setFoalNameInput] = useState('');
+
+  // 🏆 出走＆騎手エントリー申請モーダル用ステート
+  const [entryModalHorse, setEntryModalHorse] = useState<any>(null);
+  const [targetRaceNo, setTargetRaceNo] = useState<number>(1);
+  const [preferredJockey, setPreferredJockey] = useState<string>('');
 
   const [selectedHorseName, setSelectedHorseName] = useState('');
   const [selectedJockey, setSelectedJockey] = useState('');
@@ -38,6 +44,7 @@ export default function OwnerPage() {
       const { data } = await supabase.from('jockeys').select('*');
       if (data && data.length > 0) {
         setJockeyList(data);
+        setPreferredJockey(data[0].name);
         setSelectedJockey(data[0].name);
       }
     } catch (e) {
@@ -106,6 +113,29 @@ export default function OwnerPage() {
         }
       }
     }
+  };
+
+  // 🏆 レース出走＆希望騎手の申請を送信
+  const handleSubmitRaceEntry = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!entryModalHorse) return;
+
+    await supabase.from('race_requests').insert([
+      {
+        horse_id: entryModalHorse.id,
+        horse_name: entryModalHorse.name,
+        owner_name: currentUser.discord_name,
+        target_race_no: targetRaceNo,
+        preferred_jockey: preferredJockey,
+        status: 'pending',
+      },
+    ]);
+
+    await supabase.from('horse_masters').update({ status: `${targetRaceNo}R出走申請中` }).eq('id', entryModalHorse.id);
+
+    alert(`📨 「${entryModalHorse.name}」の【${targetRaceNo}R (騎手: ${preferredJockey})】への出走申請を運営へ送信しました！\n管理者の承認をお待ちください。`);
+    setEntryModalHorse(null);
+    loadMyHorses();
   };
 
   const handleStarhorseBreed = async (e: React.FormEvent) => {
@@ -350,8 +380,17 @@ export default function OwnerPage() {
 
                           {!isRetired && !isPendingRetire && !isPedigree && !isAuction && h.id && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                              
+                              {/* 🏆 出走＆騎手エントリーボタン */}
+                              <button
+                                onClick={() => setEntryModalHorse(h)}
+                                style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                              >
+                                🏆 レース出走 ＆ 騎手エントリー 🏇
+                              </button>
+
                               <div style={{ display: 'flex', gap: '4px' }}>
-                                <button onClick={() => handleTrainHorse(h.id, h.name, '坂路')} style={{ flex: 1, backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>坂路(速)</button>
+                                <button onClick={() => handleTrainHorse(h.id, h.name, '坂路')} style={{ flex: 1, backgroundColor: '#3b82f6', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>坂路(速)</button>
                                 <button onClick={() => handleTrainHorse(h.id, h.name, 'ウッド')} style={{ flex: 1, backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>ウッド(根)</button>
                                 <button onClick={() => handleTrainHorse(h.id, h.name, 'プール')} style={{ flex: 1, backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>プール(体)</button>
                               </div>
@@ -483,6 +522,45 @@ export default function OwnerPage() {
           </div>
         )}
       </div>
+
+      {/* 🏆 出走＆騎手エントリーモーダル */}
+      {entryModalHorse && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+          <div style={{ backgroundColor: '#fff', padding: '32px', borderRadius: '16px', maxWidth: '450px', width: '90%', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 16px 0', color: '#16a34a', fontSize: '20px', fontWeight: 'bold' }}>
+              🏆 「{entryModalHorse.name}」 出走 ＆ 騎手エントリー
+            </h3>
+            <form onSubmit={handleSubmitRaceEntry} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={labelStyle}>① 出走希望レースを選択 (1〜12R)</label>
+                <select value={targetRaceNo} onChange={e => setTargetRaceNo(Number(e.target.value))} style={inputStyle}>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map(no => (
+                    <option key={no} value={no}>【{no}R】に出走希望</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={labelStyle}>② 希望する騎手 (主戦騎手)</label>
+                <select value={preferredJockey} onChange={e => setPreferredJockey(e.target.value)} style={inputStyle}>
+                  {jockeyList.map(j => (
+                    <option key={j.id} value={j.name}>🏇 {j.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+                <button type="button" onClick={() => setEntryModalHorse(null)} style={{ flex: 1, padding: '12px', backgroundColor: '#94a3b8', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                  キャンセル
+                </button>
+                <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                  出走申請を送信 📨
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

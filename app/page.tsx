@@ -18,7 +18,6 @@ export default function IPATPage() {
   const [myBets, setMyBets] = useState<any[]>([]);
   const [newsList, setNewsList] = useState<any[]>([]);
   
-  // 👑 ランキング・💬 チャット・🎁 ログボ・🔨 セリ市用ステート
   const [rankingUsers, setRankingUsers] = useState<any[]>([]);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -26,7 +25,6 @@ export default function IPATPage() {
   const [auctions, setAuctions] = useState<any[]>([]);
   const [bidAmountInput, setBidAmountInput] = useState<number>(100000);
 
-  // 投票用
   const [betType, setBetType] = useState('単勝');
   const [selectedHorse1, setSelectedHorse1] = useState('');
   const [selectedHorse2, setSelectedHorse2] = useState('');
