@@ -35,6 +35,9 @@ export default function SuperAdminConsole() {
   const [customPinInput, setCustomPinInput] = useState<string>('');
   const [customTitleInput, setCustomTitleInput] = useState<string>('万馬券ハンター');
 
+  // 🌐 IPアドレス管理・検索用ステート
+  const [ipSearchQuery, setIpSearchQuery] = useState<string>('');
+
   const [breedEditOwnerName, setBreedEditOwnerName] = useState<string>('');
   const [userBredHorses, setUserBredHorses] = useState<any[]>([]);
 
@@ -478,10 +481,10 @@ export default function SuperAdminConsole() {
     const targetId = userId || selectedUser?.id;
     const targetName = userName || selectedUser?.discord_name;
     if (!targetId) return;
-    if (!confirm(`⚠️ 本当に「${targetName}」様のアカウントを削除しますか？`)) return;
+    if (!confirm(`⚠️ 本当に「${targetName}」様のアカウントを完全に削除しますか？\n（関連するIPアドレス・所持金データも一括消去されます）`)) return;
 
     await supabase.from('users').delete().eq('id', targetId);
-    alert(`🗑️ 「${targetName}」様を削除しました。`);
+    alert(`🗑️ 「${targetName}」様のアカウントおよび登録IPアドレス情報を完全に消去しました。`);
     if (targetId === selectedUserId) setSelectedUserId(''); fetchUsers();
   };
 
@@ -649,6 +652,13 @@ export default function SuperAdminConsole() {
 
   const activeHorseMasters = horseMasterList.filter(h => h.status !== '引退' && h.status !== '種牡馬/繁殖牝馬');
 
+  // 🌐 IPアドレスまたはユーザー名での絞り込みユーザーリスト
+  const filteredUsers = users.filter((u) =>
+    ipSearchQuery
+      ? (u.ip_address || '').includes(ipSearchQuery) || (u.discord_name || '').includes(ipSearchQuery)
+      : true
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#f1f5f9', fontFamily: 'sans-serif', color: '#0f172a' }}>
       
@@ -663,7 +673,7 @@ export default function SuperAdminConsole() {
 
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px' }}>
           <NavChip active={adminTab === 'race_requests_admin'} onClick={() => setAdminTab('race_requests_admin')} text={`出走申請 (${raceRequests.length})`} />
-          <NavChip active={adminTab === 'users'} onClick={() => setAdminTab('users')} text="プレイヤー管理" />
+          <NavChip active={adminTab === 'users'} onClick={() => setAdminTab('users')} text="プレイヤー管理・IP照合" />
           <NavChip active={adminTab === 'race'} onClick={() => setAdminTab('race')} text="12R一括/条件" />
           <NavChip active={adminTab === 'settle'} onClick={() => setAdminTab('settle')} text="着順確定" />
           <NavChip active={adminTab === 'horses'} onClick={() => setAdminTab('horses')} text="出走馬/新聞" />
@@ -962,9 +972,11 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 👤 TAB: プレイヤー管理 ＋ 称号授与 */}
+          {/* 👤 TAB: プレイヤー管理 ＋ 称号授与 ＋ 🌐 IPアドレス管理一覧 */}
           {adminTab === 'users' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              {/* 👑 ユーザー個別の編集・操作セクション */}
               <div style={{ backgroundColor: '#ffffff', border: '2px solid #2563eb', borderRadius: '16px', padding: '20px' }}>
                 <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>👤 プレイヤー管理 ＆ 称号授与</h2>
                 
@@ -1017,6 +1029,71 @@ export default function SuperAdminConsole() {
                 )}
               </div>
 
+              {/* 🌐 登録ユーザーIPアドレス一覧＆重複検知テーブル（新規追加機能！） */}
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
+                  🌐 ユーザー登録IPアドレス管理（複アカ照合・重複検知）
+                </h3>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <input
+                    type="text"
+                    placeholder="🔍 ユーザー名 または IPアドレスで検索..."
+                    value={ipSearchQuery}
+                    onChange={(e) => setIpSearchQuery(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+
+                <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '500px' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: '#1e3a8a', color: '#fff', textAlign: 'left' }}>
+                        <th style={{ padding: '8px 10px' }}>ユーザー名</th>
+                        <th style={{ padding: '8px 10px' }}>所持コイン</th>
+                        <th style={{ padding: '8px 10px' }}>登録IPアドレス</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'center' }}>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredUsers.map((u) => {
+                        // 同じIPアドレスを持つアカウント数を集計（重複チェック）
+                        const sameIpCount = users.filter((other) => other.ip_address && other.ip_address === u.ip_address).length;
+                        const isMultiAccount = sameIpCount > 1;
+
+                        return (
+                          <tr key={u.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: isMultiAccount ? '#fef2f2' : '#ffffff' }}>
+                            <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#0f172a' }}>
+                              👤 {u.discord_name}
+                              {isMultiAccount && (
+                                <span style={{ backgroundColor: '#ef4444', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px', fontWeight: 'bold' }}>
+                                  ⚠️ IP重複 ({sameIpCount}件)
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#16a34a' }}>
+                              {(u.balance || 0).toLocaleString()} G
+                            </td>
+                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: u.ip_address ? '#1e40af' : '#94a3b8' }}>
+                              🌐 {u.ip_address || '未記録 (旧アカウント)'}
+                            </td>
+                            <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                              <button
+                                onClick={() => handleDeleteUser(u.id, u.discord_name)}
+                                style={{ backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '10px' }}
+                              >
+                                🗑️ 消去
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* 調教確率設定 */}
               <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '2px solid #2563eb' }}>
                 <h3 style={{ margin: '0 0 10px 0', color: '#2563eb', fontSize: '16px', fontWeight: 'bold' }}>🏋️‍♂️ 調教成功確率設定</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px', gap: '10px', alignItems: 'end' }}>
@@ -1031,6 +1108,7 @@ export default function SuperAdminConsole() {
                   <button onClick={handleSaveTrainingRates} style={{ padding: '10px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>保存</button>
                 </div>
               </div>
+
             </div>
           )}
 

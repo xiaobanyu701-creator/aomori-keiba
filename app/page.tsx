@@ -8,6 +8,7 @@ export default function IPATPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [discordInput, setDiscordInput] = useState('');
   const [pinInput, setPinInput] = useState('');
+  const [showPrivacy, setShowPrivacy] = useState(false);
 
   const [mainTab, setMainTab] = useState<'bet' | 'history' | 'news' | 'ranking' | 'chat' | 'auction'>('bet');
 
@@ -226,7 +227,6 @@ export default function IPATPage() {
     const { data: users } = await supabase.from('users').select('*');
     const exUser = users?.find((u) => u.discord_name === discordInput);
 
-    // 🌐 現在アクセス中のIPアドレスを取得
     let userIp = '';
     try {
       const ipRes = await fetch('https://api.ipify.org?format=json');
@@ -237,9 +237,8 @@ export default function IPATPage() {
     }
 
     if (exUser) {
-      // 【既存ユーザーのログイン】
+      // 既存ユーザーログイン
       if (exUser.pin_code === pinInput) {
-        // 🔄 既存ユーザーのIPアドレスが未登録（NULL）か変更されていればDBを自動更新！
         if (userIp && exUser.ip_address !== userIp) {
           await supabase.from('users').update({ ip_address: userIp }).eq('id', exUser.id);
           exUser.ip_address = userIp;
@@ -249,7 +248,7 @@ export default function IPATPage() {
         alert('PINコードが違います');
       }
     } else {
-      // 【新規アカウント作成時の判定】
+      // 新規ユーザー登録
       if (userIp) {
         const isIpExists = users?.some((u) => u.ip_address === userIp);
         if (isIpExists) {
@@ -284,7 +283,6 @@ export default function IPATPage() {
     }
   };
 
-  // 🚪 ログアウト処理
   const handleSignOut = () => {
     setCurrentUser(null);
   };
@@ -450,6 +448,47 @@ export default function IPATPage() {
                 ログイン / 新規登録
               </button>
             </form>
+
+            {/* 📄 1. プライバシーポリシー表示ボタン */}
+            <div style={{ marginTop: '20px' }}>
+              <button
+                onClick={() => setShowPrivacy(true)}
+                style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '11px', textDecoration: 'underline', cursor: 'pointer' }}
+              >
+                🔒 プライバシーポリシー（IPアドレスの取り扱いについて）
+              </button>
+            </div>
+
+            {/* プライバシーポリシーモーダル */}
+            {showPrivacy && (
+              <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 9999 }}>
+                <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '16px', maxWidth: '450px', textAlign: 'left', maxHeight: '80vh', overflowY: 'auto' }}>
+                  <h3 style={{ margin: '0 0 12px 0', color: '#1e3a8a', fontSize: '16px' }}>🔒 プライバシーポリシー</h3>
+                  <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
+                    当サービス（青森県競馬即パット）では、個人情報保護法に基づき、ユーザーの個人情報・アクセスメタデータを以下の通り適切に管理・保護いたします。
+                  </p>
+                  <h4 style={{ fontSize: '13px', margin: '12px 0 6px 0', color: '#0f172a' }}>1. IPアドレスの取得と利用目的</h4>
+                  <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
+                    当サービスでは、不正アクセス防止および複数アカウントの重複作成（自作自演・新規特典の不正取得）を防止する目的のためにのみ、アクセス時のIPアドレスを取得・暗号化記録します。
+                  </p>
+                  <h4 style={{ fontSize: '13px', margin: '12px 0 6px 0', color: '#0f172a' }}>2. 第三者提供の禁止</h4>
+                  <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
+                    取得したIPアドレス等のデータは法令に基づく場合を除き、第三者へ提供・開示されることは一切ありません。
+                  </p>
+                  <h4 style={{ fontSize: '13px', margin: '12px 0 6px 0', color: '#0f172a' }}>3. データの消去</h4>
+                  <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
+                    アカウントが削除または利用停止された場合、紐づくIPアドレスデータもデータベースから一括消去されます。
+                  </p>
+                  <button
+                    onClick={() => setShowPrivacy(false)}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#1e3a8a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', marginTop: '16px', cursor: 'pointer' }}
+                  >
+                    閉じる
+                  </button>
+                </div>
+              </div>
+            )}
+
           </div>
         ) : (
           <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0' }}>
