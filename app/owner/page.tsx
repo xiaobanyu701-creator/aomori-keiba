@@ -86,6 +86,7 @@ export default function OwnerPage() {
     }
   };
 
+  // 🛡️ IP判定 ＋ 既存ユーザーログイン時IP自動更新機能付き 認証処理
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!discordInput || !pinInput) return alert('名前とPINコードを入力してください');
@@ -93,18 +94,56 @@ export default function OwnerPage() {
     const { data: users } = await supabase.from('users').select('*');
     const exUser = users?.find((u) => u.discord_name === discordInput);
 
+    // 🌐 現在アクセス中のIPアドレスを取得
+    let userIp = '';
+    try {
+      const ipRes = await fetch('https://api.ipify.org?format=json');
+      const ipData = await ipRes.json();
+      userIp = ipData.ip;
+    } catch (err) {
+      console.error('IP取得失敗:', err);
+    }
+
     if (exUser) {
+      // 既存ユーザーのログイン
       if (exUser.pin_code === pinInput) {
+        // 🔄 既存ユーザーのIPアドレスが未登録（NULL）か変更されていればDBを自動更新
+        if (userIp && exUser.ip_address !== userIp) {
+          await supabase.from('users').update({ ip_address: userIp }).eq('id', exUser.id);
+          exUser.ip_address = userIp;
+        }
         setCurrentUser(exUser);
       } else {
         alert('PINコードが違います');
       }
     } else {
-      if (confirm(`「${discordInput}」さんを新規登録しますか？`)) {
-        const { data: inserted } = await supabase
+      // 新規馬主登録：IP重複のチェック
+      if (userIp) {
+        const isIpExists = users?.some((u) => u.ip_address === userIp);
+        if (isIpExists) {
+          return alert(
+            '❌ 複数アカウントの作成は禁止されています！\n（すでにこのネットワーク/回線からアカウントが作成されています）'
+          );
+        }
+      }
+
+      if (confirm(`「${discordInput}」さんを新規登録しますか？（10,000,000G付与）`)) {
+        const { data: inserted, error } = await supabase
           .from('users')
-          .insert([{ discord_name: discordInput, pin_code: pinInput, balance: 10000000 }])
+          .insert([
+            {
+              discord_name: discordInput,
+              pin_code: pinInput,
+              balance: 10000000,
+              ip_address: userIp,
+            },
+          ])
           .select('*');
+
+        if (error) {
+          return alert('登録エラー: ' + error.message);
+        }
+
         if (inserted && inserted.length > 0) {
           setCurrentUser(inserted[0]);
           alert('🎉 馬主登録完了！ 10,000,000 G 付与！');
