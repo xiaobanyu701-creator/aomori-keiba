@@ -56,13 +56,16 @@ export default function IPATPage() {
     setIsMaintenance(maint);
   }, []);
 
-  // 🕒 10秒ごとに最新レース状態・締め切り時刻を自動更新チェック
+  // 🕒 10秒ごとに最新レース状態・オッズ・締め切り時刻を自動更新チェック
   useEffect(() => {
     const interval = setInterval(() => {
       fetchRaces();
+      if (currentRace?.id) {
+        fetchHorsesAndOnlineOdds(currentRace.id);
+      }
     }, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [currentRace]);
 
   useEffect(() => {
     if (races.length > 0) {
@@ -376,6 +379,18 @@ export default function IPATPage() {
     fetchMyBets();
     if (currentRace.id) fetchHorsesAndOnlineOdds(currentRace.id);
     fetchRanking();
+  };
+
+  // 🗣️ AIトラックマン動的パドックコメント生成エンジン（新機能）
+  const getAiTrackmanComment = (horse: any) => {
+    const odds = Number(horse.calculatedOdds || horse.manual_odds || 5.0);
+    if (odds <= 2.5) {
+      return '🗣️ 【AIパドック解説】 追い切りの動きは破格！気合十分で毛ツヤも冴え渡り、ここは勝ち負け必至の出来。';
+    } else if (odds <= 6.0) {
+      return '🗣️ 【AIパドック解説】 好仕上がりをキープ。距離適性も高く、展開ひとつで首位争いに加わる一頭。';
+    } else {
+      return '🗣️ 【AIパドック解説】 重馬場や展開の助けが必要か。一発穴をあける潜在能力はある。';
+    }
   };
 
   const isFinished = currentRace?.status === 'finished';
@@ -1042,13 +1057,18 @@ export default function IPATPage() {
         )}
       </div>
 
-      {/* 🐎 愛馬能力グラフモーダル (パターンA) */}
+      {/* 🐎 愛馬能力 ＆ 🗣️ AIトラックマンパドック自動解説モーダル */}
       {detailModalHorse && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, padding: '16px' }}>
           <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '16px', maxWidth: '400px', width: '100%', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
             <h3 style={{ margin: '0 0 12px 0', color: '#16a34a', fontSize: '18px', fontWeight: 'bold' }}>
               🐎 {detailModalHorse.name} （能力詳細）
             </h3>
+
+            {/* 🗣️ AIトラックマン自動解説パネル */}
+            <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', padding: '12px', borderRadius: '10px', marginBottom: '14px', fontSize: '12px', color: '#1e3a8a', lineHeight: '1.5', fontWeight: 'bold' }}>
+              {getAiTrackmanComment(detailModalHorse)}
+            </div>
 
             <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
               <div>騎手: <strong style={{ color: '#2563eb' }}>{detailModalHorse.jockey || '未設定'}</strong></div>
