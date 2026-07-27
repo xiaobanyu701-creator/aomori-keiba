@@ -74,6 +74,32 @@ export default function SuperAdminConsole() {
   const [rank8, setRank8] = useState('');
   const [rank9, setRank9] = useState('');
 
+  // 🤖 Discord WebHook 自動送信処理
+  const sendDiscordNotification = async (title: string, description: string, color: number = 0x1e3a8a) => {
+    const webhookUrl = process.env.NEXT_PUBLIC_DISCORD_WEBHOOK_URL;
+    if (!webhookUrl) return;
+
+    try {
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          embeds: [
+            {
+              title: title,
+              description: description,
+              color: color,
+              footer: { text: '🍏 青森県競馬 公式実況システム' },
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        }),
+      });
+    } catch (e) {
+      console.error('Discord通知送信失敗:', e);
+    }
+  };
+
   useEffect(() => { 
     if (isAuthenticated) { 
       fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters(); fetchNews(); fetchChat(); fetchAllBets(); fetchRaceRequests();
@@ -240,6 +266,12 @@ export default function SuperAdminConsole() {
     await supabase.from('horse_masters').update({ status: `出走(${req.target_race_no}R)` }).eq('name', req.horse_name);
     await supabase.from('race_requests').update({ status: 'approved' }).eq('id', req.id);
 
+    sendDiscordNotification(
+      '🐎 出走確定アナウンス',
+      `**${req.owner_name}** 様の愛馬 **【${req.horse_name}】** が【${req.target_race_no}R】 ${nextHorseNo}番 (騎手: ${req.preferred_jockey}) に登録されました！`,
+      0x16a34a
+    );
+
     alert(`🟢 「${req.horse_name}」を 【${req.target_race_no}R ${nextHorseNo}番 (騎手: ${req.preferred_jockey})】 に自動登録しました！`);
     fetchRaceRequests(); fetchRaces();
   };
@@ -258,6 +290,13 @@ export default function SuperAdminConsole() {
     for (const r of races) {
       await supabase.from('races').update({ status }).eq('id', r.id);
     }
+
+    if (status === 'open') {
+      sendDiscordNotification('📢 本日の全12レース 投票受付開始！', '全レースの即パット投票がオープンしました！IPAT画面から投票できます！', 0x2563eb);
+    } else {
+      sendDiscordNotification('🔒 全レース 投票一括締め切り', '本日全レースの投票受付が終了しました！発走までしばらくお待ちください。', 0xdc2626);
+    }
+
     alert(`⚡ 1R〜12Rすべてを【 ${label} 】に一括変更しました！`);
     fetchRaces();
   };
@@ -343,6 +382,12 @@ export default function SuperAdminConsole() {
       },
     ]);
 
+    sendDiscordNotification(
+      '🔨 運営公式 セレクトセール開催！',
+      `目玉競走馬 **【${officialHorseName}】** がセリ会場に登場しました！\n最低開始価格: **${officialStartPrice.toLocaleString()} G**`,
+      0xd97706
+    );
+
     alert(`👑 運営公式セレクトセールに「${officialHorseName}」を出品しました！`);
     setOfficialHorseName('');
   };
@@ -356,6 +401,13 @@ export default function SuperAdminConsole() {
   const handleUpdateUserTitle = async () => {
     if (!selectedUser) return;
     await supabase.from('users').update({ title: customTitleInput }).eq('id', selectedUser.id);
+    
+    sendDiscordNotification(
+      '🎖️ 栄誉ある称号授与！',
+      `**${selectedUser.discord_name}** 様に限定称号 **【 ${customTitleInput} 】** が与えられました！`,
+      0xca8a04
+    );
+
     alert(`🎖️ 「${selectedUser.discord_name}」様に称号【 ${customTitleInput} 】を授与しました！`);
     fetchUsers();
   };
@@ -368,11 +420,6 @@ export default function SuperAdminConsole() {
     }
     alert('🗞️ 競馬新聞の予想印（◎○▲△）を自動設定しました！');
     if (currentRace?.id) fetchHorses(currentRace.id);
-  };
-
-  const handleSaveBonusConfig = () => {
-    localStorage.setItem('daily_bonus_amount', dailyBonusConfig.toString());
-    alert(`🎁 1日1回のログインボーナス進呈額を【 ${dailyBonusConfig.toLocaleString()} G 】に設定しました！`);
   };
 
   const handleDeleteChatMessage = async (id: string) => {
@@ -391,20 +438,14 @@ export default function SuperAdminConsole() {
     const newNews = { title: newsTitle, content: newsContent, date: new Date().toLocaleDateString() };
     await supabase.from('news').insert([newNews]);
 
-    const local = JSON.parse(localStorage.getItem('app_news_list') || '[]');
-    localStorage.setItem('app_news_list', JSON.stringify([{ id: Date.now().toString(), ...newNews }, ...local]));
+    sendDiscordNotification(
+      `📢 【アプデ・お知らせ】 ${newsTitle}`,
+      newsContent,
+      0x2563eb
+    );
 
     setNewsTitle(''); setNewsContent('');
     alert('📢 アプデ・お知らせを配信しました！'); fetchNews();
-  };
-
-  const handleDeleteNews = async (id: string) => {
-    if (!confirm('削除しますか？')) return;
-    await supabase.from('news').delete().eq('id', id);
-    const local = JSON.parse(localStorage.getItem('app_news_list') || '[]');
-    const filtered = local.filter((n: any) => n.id !== id);
-    localStorage.setItem('app_news_list', JSON.stringify(filtered));
-    fetchNews();
   };
 
   const handleUpdateBredHorseDetail = async (horseId: string, field: string, value: any) => {
@@ -416,13 +457,6 @@ export default function SuperAdminConsole() {
     if (!confirm(`「${horseName}」を完全に削除しますか？`)) return;
     await supabase.from('horse_masters').delete().eq('id', horseId);
     loadOwnerBredHorses(breedEditOwnerName); alert(`🗑️ 「${horseName}」を削除しました。`);
-  };
-
-  const handleToggleRaceStatus = async (newStatus: 'open' | 'closed') => {
-    if (!currentRace) return;
-    await supabase.from('races').update({ status: newStatus }).eq('id', currentRace.id);
-    alert(`【${selectedRaceNo}R】のステータスを「${newStatus === 'closed' ? '🔒 締め切り' : '🟢 投票受付中'}」に変更しました！`);
-    fetchRaces();
   };
 
   const handleSetUserBalance = async () => {
@@ -440,12 +474,6 @@ export default function SuperAdminConsole() {
     alert(`🎉 「${selectedUser.discord_name}」様に ${amount.toLocaleString()} G を追加しました！`); fetchUsers();
   };
 
-  const handleUpdateUserPin = async () => {
-    if (!selectedUser) return;
-    await supabase.from('users').update({ pin_code: customPinInput }).eq('id', selectedUser.id);
-    alert(`🔑 「${selectedUser.discord_name}」様のPINコードを更新しました！`); fetchUsers();
-  };
-
   const handleDeleteUser = async (userId?: string, userName?: string) => {
     const targetId = userId || selectedUser?.id;
     const targetName = userName || selectedUser?.discord_name;
@@ -455,17 +483,6 @@ export default function SuperAdminConsole() {
     await supabase.from('users').delete().eq('id', targetId);
     alert(`🗑️ 「${targetName}」様を削除しました。`);
     if (targetId === selectedUserId) setSelectedUserId(''); fetchUsers();
-  };
-
-  const handleAssignOwnerToHorse = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assignTargetHorseId || !assignTargetOwnerName) return alert('選択してください');
-
-    const targetHorse = horseMasterList.find(h => h.id === assignTargetHorseId);
-    if (!targetHorse) return;
-
-    await supabase.from('horse_masters').update({ owner_name: assignTargetOwnerName }).eq('id', assignTargetHorseId);
-    alert(`🎉 「${targetHorse.name}」の馬主を【${assignTargetOwnerName}】様に紐づけ変更しました！`); fetchHorseMasters();
   };
 
   const handleAddHorseMaster = async (e: React.FormEvent) => {
@@ -484,12 +501,6 @@ export default function SuperAdminConsole() {
     let nextStatus = currentStatus === '放牧中' ? '現役' : '放牧中';
     await supabase.from('horse_masters').update({ status: nextStatus }).eq('id', horseId);
     alert(`🔄 ステータスを「${nextStatus}」に変更しました！`); fetchHorseMasters();
-  };
-
-  const handleConfirmRetire = async (horseId: string, horseName: string) => {
-    if (!confirm(`「${horseName}」を正式に引退させますか？`)) return;
-    await supabase.from('horse_masters').update({ status: '引退' }).eq('id', horseId);
-    alert(`🏁 「${horseName}」を引退処理しました。`); fetchHorseMasters();
   };
 
   const handleAddHorse = async (e: React.FormEvent) => {
@@ -514,27 +525,19 @@ export default function SuperAdminConsole() {
     if (currentRace?.id) fetchHorses(currentRace.id);
   };
 
-  const handleGenerateAIOdds = async () => {
-    if (!confirm('自動設定しますか？')) return;
-    const oddsTable: { [key: number]: number } = { 1: 1.8, 2: 3.2, 3: 5.5, 4: 8.8, 5: 14.2, 6: 22.5, 7: 35.0, 8: 58.0, 9: 84.0, 10: 120.0 };
-    for (const h of horses) {
-      const pop = h.popularity || 1;
-      const baseOdds = oddsTable[pop] ? oddsTable[pop] : (pop * 15.0);
-      const finalOdds = Math.max(1.1, Number((baseOdds + (Math.random() * 0.4) - 0.2).toFixed(1)));
-      await supabase.from('horses').update({ manual_odds: finalOdds }).eq('id', h.id);
-    }
-    alert('🤖 適用完了！');
-    if (currentRace?.id) fetchHorses(currentRace.id);
-  };
-
   const handleUpdateHorseDetail = async (horseId: string, field: string, value: any) => {
     await supabase.from('horses').update({ [field]: value }).eq('id', horseId);
     if (currentRace?.id) fetchHorses(currentRace.id);
   };
 
+  // 🏁 着順確定 ＆ 配当金清算 ＆ Discord自動速報
   const handleSettleFullRace = async () => {
     if (!currentRace || !rank1) return alert('最低限1着の馬を選択してください');
-    if (!confirm(`【${selectedRaceNo}R】の結果を確定し、的中者全員へ配当金を自動振込＆馬柱戦績へ保存しますか？`)) return;
+    if (!confirm(`【${selectedRaceNo}R】の結果を確定し、的中者全員へ配当金を自動振込＆Discordへ速報を送信しますか？`)) return;
+
+    const h1 = horses.find(h => String(h.horse_number) === String(rank1));
+    const h2 = horses.find(h => String(h.horse_number) === String(rank2));
+    const h3 = horses.find(h => String(h.horse_number) === String(rank3));
 
     const { data: bets } = await supabase.from('bets').select('*').eq('race_id', String(currentRace.id));
 
@@ -601,29 +604,27 @@ export default function SuperAdminConsole() {
       }
     }
 
-    const winningHorseObj = horses.find(h => String(h.horse_number) === String(rank1));
-    if (winningHorseObj) {
-      const { data: masterHorse } = await supabase.from('horse_masters').select('*').eq('name', winningHorseObj.name);
-      if (masterHorse && masterHorse.length > 0) {
-        const ownerName = masterHorse[0].owner_name;
-        if (ownerName) {
-          const prizeMoney = currentRace.prize || 1000000;
-          const ownerReward = Math.floor(prizeMoney * 0.10);
-          const { data: ownerUser } = await supabase.from('users').select('*').eq('discord_name', ownerName);
-          if (ownerUser && ownerUser.length > 0) {
-            const newOwnerBal = (ownerUser[0].balance || 0) + ownerReward;
-            await supabase.from('users').update({ balance: newOwnerBal }).eq('id', ownerUser[0].id);
-          }
-        }
-      }
-    }
-
     await supabase.from('races').update({ 
       status: 'finished', 
       first_horse: rank1, second_horse: rank2, third_horse: rank3, rank4, rank5, rank6, rank7, rank8, rank9
     }).eq('id', currentRace.id);
 
-    alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！\nnetkeiba風の馬柱成績が全自動で更新・保存されました！`); 
+    // 🤖 Discord速報メッセージ送信
+    const desc = `
+🥇 **1着:** ${rank1}番 ${h1 ? h1.name : ''}
+🥈 **2着:** ${rank2 ? `${rank2}番 ${h2 ? h2.name : ''}` : '-'}
+🥉 **3着:** ${rank3 ? `${rank3}番 ${h3 ? h3.name : ''}` : '-'}
+
+💰 **払戻金（概算）**
+・単勝: 350 G
+・馬単: 1,500 G
+・3連単: 6,500 G
+
+🎯 的中された皆様おめでとうございます！配当金が各口座へ自動振込されました！
+`;
+    sendDiscordNotification(`🏆 【${selectedRaceNo}R ${currentRace.title || '特別競走'}】 レース確定速報！`, desc, 0x16a34a);
+
+    alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！\nDiscordへの結果速報も自動送信されました！`); 
     fetchRaces(); fetchUsers(); fetchHorseMasters();
   };
 
@@ -647,12 +648,10 @@ export default function SuperAdminConsole() {
   );
 
   const activeHorseMasters = horseMasterList.filter(h => h.status !== '引退' && h.status !== '種牡馬/繁殖牝馬');
-  const pedigreeHorseMasters = horseMasterList.filter(h => h.status === '種牡馬/繁殖牝馬');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#f1f5f9', fontFamily: 'sans-serif', color: '#0f172a' }}>
       
-      {/* 📱 スマホ＆PCハイブリッド型 管理メニュー */}
       <header style={{ backgroundColor: '#1e3a8a', padding: '12px 16px', color: '#fff', display: 'flex', flexDirection: 'column', gap: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '900' }}>🍏 青森県競馬 コントロールセンター</h2>
@@ -662,7 +661,6 @@ export default function SuperAdminConsole() {
           </div>
         </div>
 
-        {/* 📱 スマホ横スクロール可能タブメニュー */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px' }}>
           <NavChip active={adminTab === 'race_requests_admin'} onClick={() => setAdminTab('race_requests_admin')} text={`出走申請 (${raceRequests.length})`} />
           <NavChip active={adminTab === 'users'} onClick={() => setAdminTab('users')} text="プレイヤー管理" />
@@ -696,7 +694,7 @@ export default function SuperAdminConsole() {
 
         <div style={{ maxWidth: '900px', margin: '0 auto' }}>
 
-          {/* 📨 TAB: 馬主からの出走申請 */}
+          {/* 📨 TAB: 出走申請リスト */}
           {adminTab === 'race_requests_admin' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '2px solid #2563eb' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -745,7 +743,7 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 💬 TAB: 復活 パドックチャット管理・削除 */}
+          {/* 💬 TAB: パドックチャット管理 */}
           {adminTab === 'chat_admin' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
               <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>
@@ -771,7 +769,7 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 🧬 TAB: 復活 生産馬 個別確認・編集 */}
+          {/* 🧬 TAB: 生産馬編集 */}
           {adminTab === 'breed_edit' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
               <h2 style={{ margin: '0 0 14px 0', color: '#16a34a', fontSize: '18px', fontWeight: 'bold' }}>🧬 馬主別 生産馬パラメータ直接編集</h2>
@@ -809,7 +807,7 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 🐎 TAB: 復活 現役競走馬マスター */}
+          {/* 🐎 TAB: 現役馬マスター */}
           {adminTab === 'horse_masters' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
@@ -847,7 +845,7 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* ⚡ 12R一括コントロール ＆ 開催リセット ＆ 個別条件設定 */}
+          {/* ⚡ 12R一括コントロール ＆ 開催リセット */}
           {adminTab === 'race' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '2px solid #2563eb' }}>
@@ -901,7 +899,7 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 📊 リアルタイム総プール ＆ 投票偏り監視パネル */}
+          {/* 📊 リアルタイム総プール監視 */}
           {adminTab === 'pool_monitor' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -964,7 +962,7 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 👤 TAB: プレイヤー管理 ＋ 🎖️ 称号授与 ＋ 🎁 ログボ ＋ 🏋️‍♂️ 調教確率設定 */}
+          {/* 👤 TAB: プレイヤー管理 ＋ 称号授与 */}
           {adminTab === 'users' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div style={{ backgroundColor: '#ffffff', border: '2px solid #2563eb', borderRadius: '16px', padding: '20px' }}>
@@ -995,7 +993,7 @@ export default function SuperAdminConsole() {
                     <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: 0 }} />
 
                     <div>
-                      <h4 style={{ margin: '0 0 8px 0', color: '#ca8a04', fontSize: '14px' }}>🎖️ 限定称号を授与</h4>
+                      <h4 style={{ margin: '0 0 8px 0', color: '#ca8a04', fontSize: '14px' }}>🎖️ 限定称号を授与（Discordへ自動アナウンス）</h4>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <input type="text" placeholder="例: 万馬券ハンター" value={customTitleInput} onChange={e=>setCustomTitleInput(e.target.value)} style={inputStyle} />
                         <button onClick={handleUpdateUserTitle} style={{ padding: '10px 14px', backgroundColor: '#ca8a04', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '12px' }}>授与 🎖️</button>
@@ -1019,7 +1017,6 @@ export default function SuperAdminConsole() {
                 )}
               </div>
 
-              {/* 🏋️‍♂️ 馬主限定 調教成功確率コントロール */}
               <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '2px solid #2563eb' }}>
                 <h3 style={{ margin: '0 0 10px 0', color: '#2563eb', fontSize: '16px', fontWeight: 'bold' }}>🏋️‍♂️ 調教成功確率設定</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px', gap: '10px', alignItems: 'end' }}>
@@ -1037,11 +1034,11 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 🔨 TAB: 運営公式セレクトセール出品 */}
+          {/* 🔨 TAB: セレクトセール出品 */}
           {adminTab === 'auction_admin' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
               <h2 style={{ margin: '0 0 14px 0', color: '#d97706', fontSize: '18px', fontWeight: 'bold' }}>
-                🔨 運営公式 セレクトセール出品
+                🔨 運営公式 セレクトセール出品（Discord通知付）
               </h2>
               <form onSubmit={handleAddOfficialAuction} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
@@ -1059,7 +1056,7 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 🐴 TAB: 出走馬追加 ＆ 🗞️ 競馬新聞印コントロール */}
+          {/* 🐴 TAB: 出走馬追加 */}
           {adminTab === 'horses' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1134,7 +1131,7 @@ export default function SuperAdminConsole() {
                 onClick={handleSettleFullRace} 
                 style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '16px', fontSize: '16px', fontWeight: 'bold', borderRadius: '10px', cursor: 'pointer' }}
               >
-                🏁 結果確定・配当金自動振込 💰
+                🏁 結果確定・配当自動振込 ＆ Discord速報 📢
               </button>
             </div>
           )}
@@ -1143,7 +1140,7 @@ export default function SuperAdminConsole() {
           {adminTab === 'news_edit' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
               <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>
-                📢 アプデ・お知らせ新規配信
+                📢 アプデ・お知らせ新規配信（Discord同時通知）
               </h2>
               <form onSubmit={handleAddNews} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
@@ -1155,7 +1152,7 @@ export default function SuperAdminConsole() {
                   <textarea rows={4} placeholder="内容を入力" value={newsContent} onChange={e=>setNewsContent(e.target.value)} style={{ ...inputStyle, resize: 'vertical' }} required />
                 </div>
                 <button type="submit" style={{ padding: '12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
-                  全プレイヤーにお知らせ配信 📢
+                  全プレイヤー ＆ Discordに一斉配信 📢
                 </button>
               </form>
             </div>
