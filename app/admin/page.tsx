@@ -35,6 +35,9 @@ export default function SuperAdminConsole() {
   const [customPinInput, setCustomPinInput] = useState<string>('');
   const [customTitleInput, setCustomTitleInput] = useState<string>('万馬券ハンター');
 
+  // 🎁 全ユーザー一括配布用ステート
+  const [bulkGiftAmount, setBulkImportGiftAmount] = useState<number>(1000000);
+
   // 🌐 IPアドレス管理・検索用ステート
   const [ipSearchQuery, setIpSearchQuery] = useState<string>('');
 
@@ -45,6 +48,7 @@ export default function SuperAdminConsole() {
   const [newsContent, setNewsContent] = useState('');
   const [newsList, setNewsList] = useState<any[]>([]);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [auctions, setAuctions] = useState<any[]>([]);
   const [dailyBonusConfig, setDailyBonusConfig] = useState<number>(100000);
   const [trainingSuccessRate, setTrainingSuccessRate] = useState<number>(70);
   const [trainingSuperRate, setTrainingSuperRate] = useState<number>(15);
@@ -105,7 +109,7 @@ export default function SuperAdminConsole() {
 
   useEffect(() => { 
     if (isAuthenticated) { 
-      fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters(); fetchNews(); fetchChat(); fetchAllBets(); fetchRaceRequests();
+      fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters(); fetchNews(); fetchChat(); fetchAllBets(); fetchRaceRequests(); fetchAuctions();
       const cfg = Number(localStorage.getItem('daily_bonus_amount') || 100000);
       setDailyBonusConfig(cfg);
       const sRate = Number(localStorage.getItem('training_success_rate') || 70);
@@ -226,6 +230,13 @@ export default function SuperAdminConsole() {
     } catch (e) { console.error(e); }
   };
 
+  const fetchAuctions = async () => {
+    try {
+      const { data } = await supabase.from('auctions').select('*').eq('status', 'active');
+      if (data) setAuctions(data);
+    } catch (e) { console.error(e); }
+  };
+
   const fetchAllBets = async () => {
     const { data } = await supabase.from('bets').select('*');
     if (data) setAllBets(data);
@@ -236,6 +247,109 @@ export default function SuperAdminConsole() {
       const { data } = await supabase.from('race_requests').select('*').eq('status', 'pending');
       if (data) setRaceRequests(data.reverse());
     } catch (e) { console.error(e); }
+  };
+
+  // 🔑 PINコードのリセット機能
+  const handleResetPinCode = async () => {
+    if (!selectedUser) return;
+    if (!confirm(`「${selectedUser.discord_name}」様の暗証番号（PIN）を【 0000 】に初期化しますか？`)) return;
+
+    await supabase.from('users').update({ pin_code: '0000' }).eq('id', selectedUser.id);
+    alert(`🔑 「${selectedUser.discord_name}」様の暗証番号を【 0000 】にリセットしました！`);
+    setCustomPinInput('0000');
+    fetchUsers();
+  };
+
+  // 🎁 全ユーザー一括コイン配布（プレゼント）機能
+  const handleDistributeBulkCoins = async () => {
+    if (bulkGiftAmount <= 0) return alert('正しい金額を入力してください');
+    if (!confirm(`全プレイヤー（${users.length}名）へ一斉に【 ${bulkGiftAmount.toLocaleString()} G 】をプレゼントしますか？`)) return;
+
+    for (const u of users) {
+      const newBal = (u.balance || 0) + bulkGiftAmount;
+      await supabase.from('users').update({ balance: newBal }).eq('id', u.id);
+    }
+
+    sendDiscordNotification(
+      '🎁 運営特別一括ボーナス配布！',
+      `全プレイヤーへ **【 ${bulkGiftAmount.toLocaleString()} G 】** がプレゼントされました！所持金をご確認ください！`,
+      0xeab308
+    );
+
+    alert(`🎉 全プレイヤーへ ${bulkGiftAmount.toLocaleString()} G を一括配布しました！`);
+    fetchUsers();
+  };
+
+  // 💸 ① 馬券返還・全額自動返金処理
+  const handleRefundRaceBets = async () => {
+    if (!currentRace) return;
+    if (!confirm(`⚠️ 警告: 【${selectedRaceNo}R】に賭けられたすべての馬券をキャンセルし、全ユーザーへ賭け金を完全返金しますか？`)) return;
+
+    const { data: bets } = await supabase.from('bets').select('*').eq('race_id', String(currentRace.id));
+    if (bets && bets.length > 0) {
+      for (const b of bets) {
+        const refundAmount = Number(b.amount || 0);
+        if (refundAmount > 0) {
+          const { data: uData } = await supabase.from('users').select('balance').eq('id', b.user_id);
+          if (uData && uData.length > 0) {
+            const currentBal = Number(uData[0].balance || 0);
+            await supabase.from('users').update({ balance: currentBal + refundAmount }).eq('id', b.user_id);
+          }
+        }
+        await supabase.from('bets').delete().eq('id', b.id);
+      }
+    }
+
+    await supabase.from('races').update({ status: 'open' }).eq('id', currentRace.id);
+
+    sendDiscordNotification(
+      `💸 【${selectedRaceNo}R】全額返還（返金）のお知らせ`,
+      `【${selectedRaceNo}R】は出走除外/中止のため、投票されたすべての馬券代金がプレイヤー口座へ全額自動返還されました。`,
+      0xdc2626
+    );
+
+    alert(`💸 【${selectedRaceNo}R】の賭け金を全額返金し、投票データをリセットしました！`);
+    fetchRaces(); fetchUsers(); fetchAllBets();
+  };
+
+  // 🔄 ④ 着順確定の取り消し（清算キャンセル）機能
+  const handleUnsettleRace = async () => {
+    if (!currentRace) return;
+    if (!confirm(`⚠️ 【${selectedRaceNo}R】の確定状態を取り消しますか？\n（付与された的中配当金を引き落とし、未確定に戻します）`)) return;
+
+    const { data: bets } = await supabase.from('bets').select('*').eq('race_id', String(currentRace.id));
+    if (bets && bets.length > 0) {
+      for (const b of bets) {
+        const payout = Number(b.payout_amount || 0);
+        if (payout > 0 && b.is_claimed) {
+          const { data: uData } = await supabase.from('users').select('balance').eq('id', b.user_id);
+          if (uData && uData.length > 0) {
+            const currentBal = Number(uData[0].balance || 0);
+            await supabase.from('users').update({ balance: Math.max(0, currentBal - payout) }).eq('id', b.user_id);
+          }
+        }
+        await supabase.from('bets').update({ payout_amount: 0, is_claimed: false }).eq('id', b.id);
+      }
+    }
+
+    await supabase.from('races').update({
+      status: 'open',
+      first_horse: null, second_horse: null, third_horse: null
+    }).eq('id', currentRace.id);
+
+    alert(`🔄 【${selectedRaceNo}R】の着順確定を取り消し、配当金を回収しました！`);
+    fetchRaces(); fetchUsers(); fetchAllBets();
+  };
+
+  // 🔨 ⑤ セリ（オークション）の強制取り消し
+  const handleForceCancelAuction = async (auctionId: string, horseName: string) => {
+    if (!confirm(`「${horseName}」のセリ出品を強制取り消し（削除）しますか？`)) return;
+
+    await supabase.from('auctions').delete().eq('id', auctionId);
+    await supabase.from('horse_masters').update({ status: '現役' }).eq('name', horseName);
+
+    alert(`🔨 「${horseName}」のセリ出品を取り消しました。`);
+    fetchAuctions(); fetchHorseMasters();
   };
 
   const handleApproveRaceRequest = async (req: any) => {
@@ -392,7 +506,7 @@ export default function SuperAdminConsole() {
     );
 
     alert(`👑 運営公式セレクトセールに「${officialHorseName}」を出品しました！`);
-    setOfficialHorseName('');
+    setOfficialHorseName(''); fetchAuctions();
   };
 
   const handleSaveTrainingRates = () => {
@@ -612,7 +726,6 @@ export default function SuperAdminConsole() {
       first_horse: rank1, second_horse: rank2, third_horse: rank3, rank4, rank5, rank6, rank7, rank8, rank9
     }).eq('id', currentRace.id);
 
-    // 🤖 Discord速報メッセージ送信
     const desc = `
 🥇 **1着:** ${rank1}番 ${h1 ? h1.name : ''}
 🥈 **2着:** ${rank2 ? `${rank2}番 ${h2 ? h2.name : ''}` : '-'}
@@ -652,7 +765,6 @@ export default function SuperAdminConsole() {
 
   const activeHorseMasters = horseMasterList.filter(h => h.status !== '引退' && h.status !== '種牡馬/繁殖牝馬');
 
-  // 🌐 IPアドレスまたはユーザー名での絞り込みユーザーリスト
   const filteredUsers = users.filter((u) =>
     ipSearchQuery
       ? (u.ip_address || '').includes(ipSearchQuery) || (u.discord_name || '').includes(ipSearchQuery)
@@ -674,12 +786,12 @@ export default function SuperAdminConsole() {
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px' }}>
           <NavChip active={adminTab === 'race_requests_admin'} onClick={() => setAdminTab('race_requests_admin')} text={`出走申請 (${raceRequests.length})`} />
           <NavChip active={adminTab === 'users'} onClick={() => setAdminTab('users')} text="プレイヤー管理・IP照合" />
-          <NavChip active={adminTab === 'race'} onClick={() => setAdminTab('race')} text="12R一括/条件" />
-          <NavChip active={adminTab === 'settle'} onClick={() => setAdminTab('settle')} text="着順確定" />
+          <NavChip active={adminTab === 'race'} onClick={() => setAdminTab('race')} text="12R一括/返金" />
+          <NavChip active={adminTab === 'settle'} onClick={() => setAdminTab('settle')} text="着順確定/確定消去" />
           <NavChip active={adminTab === 'horses'} onClick={() => setAdminTab('horses')} text="出走馬/新聞" />
           <NavChip active={adminTab === 'bulk_import'} onClick={() => setAdminTab('bulk_import')} text="テキスト一括" />
           <NavChip active={adminTab === 'pool_monitor'} onClick={() => setAdminTab('pool_monitor')} text="プール監視" />
-          <NavChip active={adminTab === 'auction_admin'} onClick={() => setAdminTab('auction_admin')} text="セレクトセール" />
+          <NavChip active={adminTab === 'auction_admin'} onClick={() => setAdminTab('auction_admin')} text={`セリ管理 (${auctions.length})`} />
           <NavChip active={adminTab === 'news_edit'} onClick={() => setAdminTab('news_edit')} text="アプデ配信" />
           <NavChip active={adminTab === 'chat_admin'} onClick={() => setAdminTab('chat_admin')} text="チャット管理" />
           <NavChip active={adminTab === 'breed_edit'} onClick={() => setAdminTab('breed_edit')} text="生産馬編集" />
@@ -855,7 +967,7 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* ⚡ 12R一括コントロール ＆ 開催リセット */}
+          {/* ⚡ 12R一括コントロール ＆ 開催リセット ＆ 💸 全額返金 */}
           {adminTab === 'race' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '2px solid #2563eb' }}>
@@ -874,9 +986,19 @@ export default function SuperAdminConsole() {
               </div>
 
               <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '18px' }}>🛠️ 【{selectedRaceNo}R】 レース名・条件設定</h3>
-                
-                <form onSubmit={handleUpdateRaceInfo} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h3 style={{ margin: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '18px' }}>🛠️ 【{selectedRaceNo}R】 レース名・条件設定</h3>
+                  
+                  {/* 💸 全額自動返金ボタン */}
+                  <button
+                    onClick={handleRefundRaceBets}
+                    style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                  >
+                    💸 【{selectedRaceNo}R】全額自動返金
+                  </button>
+                </div>
+
+                <form onSubmit={handleUpdateRaceInfo} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div>
                     <label style={labelStyle}>レース名</label>
                     <input type="text" placeholder="例: 青森県ダービー" value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#1e3a8a' }} required />
@@ -972,20 +1094,42 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 👤 TAB: プレイヤー管理 ＋ 称号授与 ＋ 🌐 IPアドレス管理一覧 */}
+          {/* 👤 TAB: プレイヤー管理 ＋ 称号 ＋ 🔑 PINリセット ＋ 🎁 全員一括配布 ＋ 🌐 IPアドレス照合 */}
           {adminTab === 'users' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               
+              {/* 🎁 全プレイヤー一括コイン配布セクション */}
+              <div style={{ backgroundColor: '#fefce8', border: '2px solid #eab308', borderRadius: '16px', padding: '16px' }}>
+                <h3 style={{ margin: '0 0 8px 0', color: '#ca8a04', fontSize: '15px', fontWeight: 'bold' }}>
+                  🎁 全プレイヤー一括コインプレゼント（イベント・お詫び用）
+                </h3>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="number"
+                    step="100000"
+                    value={bulkGiftAmount}
+                    onChange={(e) => setBulkImportGiftAmount(Number(e.target.value))}
+                    style={{ ...inputStyle, width: '160px', fontWeight: 'bold' }}
+                  />
+                  <button
+                    onClick={handleDistributeBulkCoins}
+                    style={{ padding: '10px 16px', backgroundColor: '#eab308', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}
+                  >
+                    全員に配る 🎁
+                  </button>
+                </div>
+              </div>
+
               {/* 👑 ユーザー個別の編集・操作セクション */}
               <div style={{ backgroundColor: '#ffffff', border: '2px solid #2563eb', borderRadius: '16px', padding: '20px' }}>
-                <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>👤 プレイヤー管理 ＆ 称号授与</h2>
+                <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>👤 プレイヤー個別管理 ＆ 称号・PIN</h2>
                 
                 <div style={{ marginBottom: '16px' }}>
                   <label style={labelStyle}>操作するプレイヤーを選択</label>
                   <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '2px solid #2563eb', fontSize: '15px', fontWeight: 'bold', backgroundColor: '#eff6ff', width: '100%' }}>
                     {users.map(u => (
                       <option key={u.id} value={u.id}>
-                        👤 {u.discord_name} (残高: {(u.balance || 0).toLocaleString()}G)
+                        👤 {u.discord_name} (PIN: {u.pin_code || '未設定'} / 残高: {(u.balance || 0).toLocaleString()}G)
                       </option>
                     ))}
                   </select>
@@ -993,6 +1137,19 @@ export default function SuperAdminConsole() {
 
                 {selectedUser && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                    
+                    {/* 🔑 PINコード管理 */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: '13px', color: '#1e3a8a', fontWeight: 'bold' }}>
+                        🔑 現在の暗証番号 (PIN): <span style={{ color: '#dc2626', letterSpacing: '2px', fontSize: '15px' }}>{selectedUser.pin_code || '未設定'}</span>
+                      </div>
+                      <button onClick={handleResetPinCode} style={{ padding: '6px 12px', backgroundColor: '#64748b', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>
+                        🔑 0000に初期化
+                      </button>
+                    </div>
+
+                    <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: 0 }} />
+
                     <div>
                       <h4 style={{ margin: '0 0 8px 0', color: '#16a34a', fontSize: '14px' }}>💰 コイン加算・引き落とし</h4>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1029,7 +1186,7 @@ export default function SuperAdminConsole() {
                 )}
               </div>
 
-              {/* 🌐 登録ユーザーIPアドレス一覧＆重複検知テーブル（新規追加機能！） */}
+              {/* 🌐 登録ユーザーIPアドレス一覧＆重複検知テーブル */}
               <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
                   🌐 ユーザー登録IPアドレス管理（複アカ照合・重複検知）
@@ -1050,6 +1207,7 @@ export default function SuperAdminConsole() {
                     <thead>
                       <tr style={{ backgroundColor: '#1e3a8a', color: '#fff', textAlign: 'left' }}>
                         <th style={{ padding: '8px 10px' }}>ユーザー名</th>
+                        <th style={{ padding: '8px 10px' }}>PIN</th>
                         <th style={{ padding: '8px 10px' }}>所持コイン</th>
                         <th style={{ padding: '8px 10px' }}>登録IPアドレス</th>
                         <th style={{ padding: '8px 10px', textAlign: 'center' }}>操作</th>
@@ -1057,7 +1215,6 @@ export default function SuperAdminConsole() {
                     </thead>
                     <tbody>
                       {filteredUsers.map((u) => {
-                        // 同じIPアドレスを持つアカウント数を集計（重複チェック）
                         const sameIpCount = users.filter((other) => other.ip_address && other.ip_address === u.ip_address).length;
                         const isMultiAccount = sameIpCount > 1;
 
@@ -1070,6 +1227,9 @@ export default function SuperAdminConsole() {
                                   ⚠️ IP重複 ({sameIpCount}件)
                                 </span>
                               )}
+                            </td>
+                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                              {u.pin_code || '未設定'}
                             </td>
                             <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#16a34a' }}>
                               {(u.balance || 0).toLocaleString()} G
@@ -1112,25 +1272,51 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 🔨 TAB: セレクトセール出品 */}
+          {/* 🔨 TAB: セレクトセール出品 ＆ 強制キャンセル管理 */}
           {adminTab === 'auction_admin' && (
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
-              <h2 style={{ margin: '0 0 14px 0', color: '#d97706', fontSize: '18px', fontWeight: 'bold' }}>
-                🔨 運営公式 セレクトセール出品（Discord通知付）
-              </h2>
-              <form onSubmit={handleAddOfficialAuction} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div>
-                  <label style={labelStyle}>目玉競走馬の名前</label>
-                  <input type="text" placeholder="例: ★SS確定 サンデーサイレンス産駒" value={officialHorseName} onChange={e=>setOfficialHorseName(e.target.value)} style={inputStyle} required />
-                </div>
-                <div>
-                  <label style={labelStyle}>最低開始価格 (G)</label>
-                  <input type="number" step="100000" value={officialStartPrice} onChange={e=>setOfficialStartPrice(Number(e.target.value))} style={inputStyle} required />
-                </div>
-                <button type="submit" style={{ padding: '14px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
-                  セレクトセールに出品する 🔨
-                </button>
-              </form>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
+                <h2 style={{ margin: '0 0 14px 0', color: '#d97706', fontSize: '18px', fontWeight: 'bold' }}>
+                  🔨 運営公式 セレクトセール出品（Discord通知付）
+                </h2>
+                <form onSubmit={handleAddOfficialAuction} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <label style={labelStyle}>目玉競走馬の名前</label>
+                    <input type="text" placeholder="例: ★SS確定 サンデーサイレンス産駒" value={officialHorseName} onChange={e=>setOfficialHorseName(e.target.value)} style={inputStyle} required />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>最低開始価格 (G)</label>
+                    <input type="number" step="100000" value={officialStartPrice} onChange={e=>setOfficialStartPrice(Number(e.target.value))} style={inputStyle} required />
+                  </div>
+                  <button type="submit" style={{ padding: '14px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+                    セレクトセールに出品する 🔨
+                  </button>
+                </form>
+              </div>
+
+              {/* ⑤ 出品中オークション強制管理 */}
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ margin: '0 0 12px 0', color: '#d97706', fontSize: '16px', fontWeight: 'bold' }}>
+                  🔨 現在出品中のセリ市リスト（強制取り消し可能）
+                </h3>
+                {auctions.length === 0 ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>現在出品中の馬はありません</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {auctions.map(a => (
+                      <div key={a.id} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <strong style={{ color: '#d97706', fontSize: '14px' }}>🐎 {a.horse_name}</strong>
+                          <div style={{ fontSize: '11px', color: '#64748b' }}>出品者: {a.seller_name} / 最高額: {(a.current_bid || 0).toLocaleString()}G ({a.highest_bidder})</div>
+                        </div>
+                        <button onClick={() => handleForceCancelAuction(a.id, a.horse_name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>
+                          強制削除 🗑️
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1189,12 +1375,22 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 🏆 TAB: 着順確定 */}
+          {/* 🏆 TAB: 着順確定 ＆ ④ 確定取り消し */}
           {adminTab === 'settle' && (
             <div style={{ border: '2px solid #2563eb', padding: '20px', borderRadius: '16px', backgroundColor: '#ffffff' }}>
-              <h3 style={{ color: '#1e3a8a', marginTop: 0, fontWeight: 'bold', fontSize: '18px' }}>
-                🏆 【{selectedRaceNo}R】 着順確定（1着〜9着）
-              </h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ color: '#1e3a8a', margin: 0, fontWeight: 'bold', fontSize: '18px' }}>
+                  🏆 【{selectedRaceNo}R】 着順確定（1着〜9着）
+                </h3>
+                
+                {/* 🔄 ④ 着順確定取り消しボタン */}
+                <button
+                  onClick={handleUnsettleRace}
+                  style={{ backgroundColor: '#ca8a04', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                >
+                  🔄 【{selectedRaceNo}R】確定取り消し
+                </button>
+              </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginBottom: '20px' }}>
                 <div><label style={{ fontSize: '11px', color: '#dc2626', fontWeight: 'bold', display: 'block' }}>🥇 1着 (必須)</label><select value={rank1} onChange={e=>setRank1(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
