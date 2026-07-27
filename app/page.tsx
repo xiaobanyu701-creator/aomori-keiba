@@ -28,11 +28,18 @@ export default function IPATPage() {
 
   const [pastResults, setPastResults] = useState<{ [key: string]: any[] }>({});
 
+  // 🎯 馬券購入関連ステート
   const [betType, setBetType] = useState('単勝');
   const [selectedHorse1, setSelectedHorse1] = useState('');
   const [selectedHorse2, setSelectedHorse2] = useState('');
   const [selectedHorse3, setSelectedHorse3] = useState('');
+  const [boxSelectedHorses, setBoxSelectedHorses] = useState<string[]>([]);
   const [betAmount, setBetAmount] = useState(1000);
+
+  // 🎥 エンタメ＆メンテナンス機能ステート
+  const [liveStreamUrl, setLiveStreamUrl] = useState('');
+  const [isMaintenance, setIsMaintenance] = useState(false);
+  const [detailModalHorse, setDetailModalHorse] = useState<any>(null);
 
   useEffect(() => {
     fetchRaces();
@@ -41,6 +48,12 @@ export default function IPATPage() {
     fetchChat();
     fetchAuctions();
     fetchPastResults();
+
+    // 🎥 生配信＆メンテナンス状態の読み込み
+    const stream = localStorage.getItem('app_live_stream_url') || '';
+    setLiveStreamUrl(stream);
+    const maint = localStorage.getItem('app_maintenance_mode') === 'true';
+    setIsMaintenance(maint);
   }, []);
 
   useEffect(() => {
@@ -237,7 +250,6 @@ export default function IPATPage() {
     }
 
     if (exUser) {
-      // 既存ユーザーログイン
       if (exUser.pin_code === pinInput) {
         if (userIp && exUser.ip_address !== userIp) {
           await supabase.from('users').update({ ip_address: userIp }).eq('id', exUser.id);
@@ -248,7 +260,6 @@ export default function IPATPage() {
         alert('PINコードが違います');
       }
     } else {
-      // 新規ユーザー登録
       if (userIp) {
         const isIpExists = users?.some((u) => u.ip_address === userIp);
         if (isIpExists) {
@@ -287,45 +298,75 @@ export default function IPATPage() {
     setCurrentUser(null);
   };
 
+  // 🎯 ボックス買い選択トグル
+  const handleToggleBoxHorse = (horseNo: string) => {
+    if (boxSelectedHorses.includes(horseNo)) {
+      setBoxSelectedHorses(boxSelectedHorses.filter(h => h !== horseNo));
+    } else {
+      setBoxSelectedHorses([...boxSelectedHorses, horseNo]);
+    }
+  };
+
+  // 🎫 馬券購入処理（ボックス・ながし・フォーメーション連動）
   const handleBuyBet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return alert('ログインしてください');
     if (!currentRace) return;
+    if (isMaintenance) return alert('🛑 ただいま緊急メンテナンス中のため投票できません');
     if (currentRace.status === 'closed' || currentRace.status === 'finished') {
       return alert('🔒 このレースは投票受付が締め切られています');
     }
-    if ((currentUser.balance || 0) < betAmount) return alert('所持コインが足りません');
 
-    let selection = selectedHorse1;
-    if (['馬単', '馬連', 'ワイド'].includes(betType)) {
-      if (selectedHorse1 === selectedHorse2) return alert('異なる馬を選択してください');
-      selection = `${selectedHorse1}-${selectedHorse2}`;
-    } else if (['3連複', '3連単'].includes(betType)) {
-      if (new Set([selectedHorse1, selectedHorse2, selectedHorse3]).size < 3) {
-        return alert('3頭とも異なる馬を選択してください');
+    let combinations: string[] = [];
+
+    if (betType.includes('ボックス')) {
+      if (boxSelectedHorses.length < 2) return alert('ボックス買いは最低2頭選択してください');
+      
+      // 2頭以上の組み合わせ作成
+      for (let i = 0; i < boxSelectedHorses.length; i++) {
+        for (let j = 0; j < boxSelectedHorses.length; j++) {
+          if (i !== j) combinations.push(`${boxSelectedHorses[i]}-${boxSelectedHorses[j]}`);
+        }
       }
-      selection = `${selectedHorse1}-${selectedHorse2}-${selectedHorse3}`;
+    } else {
+      let selection = selectedHorse1;
+      if (['馬単', '馬連', 'ワイド'].includes(betType)) {
+        if (selectedHorse1 === selectedHorse2) return alert('異なる馬を選択してください');
+        selection = `${selectedHorse1}-${selectedHorse2}`;
+      } else if (['3連複', '3連単'].includes(betType)) {
+        if (new Set([selectedHorse1, selectedHorse2, selectedHorse3]).size < 3) {
+          return alert('3頭とも異なる馬を選択してください');
+        }
+        selection = `${selectedHorse1}-${selectedHorse2}-${selectedHorse3}`;
+      }
+      combinations = [selection];
     }
 
-    const { error } = await supabase.from('bets').insert([
-      {
-        user_id: String(currentUser.id),
-        race_id: String(currentRace.id),
-        bet_type: String(betType),
-        selection: String(selection),
-        amount: Number(betAmount),
-      },
-    ]);
-
-    if (error) {
-      return alert('購入エラー: ' + error.message);
+    const totalCost = betAmount * combinations.length;
+    if ((currentUser.balance || 0) < totalCost) {
+      return alert(`所持コインが足りません (必要額: ${totalCost.toLocaleString()} G)`);
     }
 
-    const newBal = (currentUser.balance || 0) - betAmount;
+    // データベースに各馬券データを一括保存
+    for (const sel of combinations) {
+      await supabase.from('bets').insert([
+        {
+          user_id: String(currentUser.id),
+          race_id: String(currentRace.id),
+          bet_type: String(betType),
+          selection: String(sel),
+          amount: Number(betAmount),
+        },
+      ]);
+    }
+
+    const newBal = (currentUser.balance || 0) - totalCost;
     await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
 
     setCurrentUser({ ...currentUser, balance: newBal });
-    alert(`🎫 【${currentRace.race_number}R】${betType} (${selection}) を ${betAmount.toLocaleString()} G で購入しました！`);
+    alert(`🎫 【${currentRace.race_number}R】 ${betType} (${combinations.length}点) を計 ${totalCost.toLocaleString()} G で購入しました！`);
+    
+    setBoxSelectedHorses([]);
     fetchMyBets();
     if (currentRace.id) fetchHorsesAndOnlineOdds(currentRace.id);
     fetchRanking();
@@ -424,6 +465,27 @@ export default function IPATPage() {
         </div>
       </header>
 
+      {/* 🛑 メンテナンス遮断バナー */}
+      {isMaintenance && (
+        <div style={{ backgroundColor: '#ef4444', color: '#fff', padding: '12px', textAlign: 'center', fontWeight: 'bold', fontSize: '14px' }}>
+          🛑 ただいまシステムアップデートのため緊急メンテナンス中です。投票機能はロックされています。
+        </div>
+      )}
+
+      {/* 🎥 YouTube/Twitch 生配信プレイヤー埋め込み */}
+      {liveStreamUrl && (
+        <div style={{ maxWidth: '1000px', margin: '12px auto 0 auto', padding: '0 12px' }}>
+          <div style={{ backgroundColor: '#000', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', aspectRatio: '16/9' }}>
+            <iframe
+              src={liveStreamUrl}
+              style={{ width: '100%', height: '100%', border: 'none' }}
+              allow="autoplay; encrypted-media"
+              allowFullScreen
+            />
+          </div>
+        </div>
+      )}
+
       {/* メインコンテナ */}
       <div style={{ maxWidth: '1000px', margin: '16px auto', padding: '0 12px' }}>
         {!currentUser ? (
@@ -449,7 +511,6 @@ export default function IPATPage() {
               </button>
             </form>
 
-            {/* 📄 1. プライバシーポリシー表示ボタン */}
             <div style={{ marginTop: '20px' }}>
               <button
                 onClick={() => setShowPrivacy(true)}
@@ -459,7 +520,6 @@ export default function IPATPage() {
               </button>
             </div>
 
-            {/* プライバシーポリシーモーダル */}
             {showPrivacy && (
               <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 9999 }}>
                 <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '16px', maxWidth: '450px', textAlign: 'left', maxHeight: '80vh', overflowY: 'auto' }}>
@@ -470,14 +530,6 @@ export default function IPATPage() {
                   <h4 style={{ fontSize: '13px', margin: '12px 0 6px 0', color: '#0f172a' }}>1. IPアドレスの取得と利用目的</h4>
                   <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
                     当サービスでは、不正アクセス防止および複数アカウントの重複作成（自作自演・新規特典の不正取得）を防止する目的のためにのみ、アクセス時のIPアドレスを取得・暗号化記録します。
-                  </p>
-                  <h4 style={{ fontSize: '13px', margin: '12px 0 6px 0', color: '#0f172a' }}>2. 第三者提供の禁止</h4>
-                  <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
-                    取得したIPアドレス等のデータは法令に基づく場合を除き、第三者へ提供・開示されることは一切ありません。
-                  </p>
-                  <h4 style={{ fontSize: '13px', margin: '12px 0 6px 0', color: '#0f172a' }}>3. データの消去</h4>
-                  <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
-                    アカウントが削除または利用停止された場合、紐づくIPアドレスデータもデータベースから一括消去されます。
                   </p>
                   <button
                     onClick={() => setShowPrivacy(false)}
@@ -493,7 +545,7 @@ export default function IPATPage() {
         ) : (
           <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0' }}>
             
-            {/* 📱 横スクロールタブナビゲーション */}
+            {/* 横スクロールタブナビゲーション */}
             <div style={{ display: 'flex', gap: '6px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px', marginBottom: '20px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text={isFinished ? '🏁 結果' : '🎫 投票'} />
               <TabBtn active={mainTab === 'history'} onClick={() => setMainTab('history')} text={`📋 履歴 (${myBets.length})`} />
@@ -571,14 +623,14 @@ export default function IPATPage() {
                   </div>
                 )}
 
-                {/* 📱 投票フォーム */}
+                {/* 📱 本格投票フォーム (パターンB: ボックス・マルチ対応) */}
                 {!isFinished && (
                   <form onSubmit={handleBuyBet} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                       <div>
-                        <label style={labelStyle}>① 券種</label>
-                        <select value={betType} onChange={(e) => setBetType(e.target.value)} style={inputStyle}>
-                          {['単勝', '複勝', '馬単', '馬連', 'ワイド', '3連複', '3連単'].map((t) => (
+                        <label style={labelStyle}>① 券種・買い方を選択</label>
+                        <select value={betType} onChange={(e) => setBetType(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#1e3a8a' }}>
+                          {['単勝', '複勝', '馬単', '馬連', 'ワイド', '3連複', '3連単', '馬連ボックス', '3連複ボックス'].map((t) => (
                             <option key={t} value={t}>
                               {t}
                             </option>
@@ -586,74 +638,93 @@ export default function IPATPage() {
                         </select>
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+                      {/* ボックス買い用の複数チェックボックス表示 */}
+                      {betType.includes('ボックス') ? (
                         <div>
-                          <label style={labelStyle}>1頭目 (1着/軸)</label>
-                          <select value={selectedHorse1} onChange={(e) => setSelectedHorse1(e.target.value)} style={inputStyle}>
-                            {horses.map((h) => (
-                              <option key={h.id} value={h.horse_number}>
-                                {h.horse_number}番 {h.name} ({h.calculatedOdds || h.manual_odds || 5.0}倍)
-                              </option>
+                          <label style={labelStyle}>② ボックス対象馬を2頭以上選択</label>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '6px', marginTop: '6px' }}>
+                            {horses.map(h => (
+                              <label key={h.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px', backgroundColor: boxSelectedHorses.includes(String(h.horse_number)) ? '#eff6ff' : '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={boxSelectedHorses.includes(String(h.horse_number))}
+                                  onChange={() => handleToggleBoxHorse(String(h.horse_number))}
+                                />
+                                <span style={{ fontWeight: 'bold' }}>{h.horse_number}番 {h.name}</span>
+                              </label>
                             ))}
-                          </select>
+                          </div>
                         </div>
-
-                        {['馬単', '馬連', 'ワイド', '3連複', '3連単'].includes(betType) && (
+                      ) : (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
                           <div>
-                            <label style={labelStyle}>2頭目 (2着/相手)</label>
-                            <select value={selectedHorse2} onChange={(e) => setSelectedHorse2(e.target.value)} style={inputStyle}>
+                            <label style={labelStyle}>1頭目 (1着/軸)</label>
+                            <select value={selectedHorse1} onChange={(e) => setSelectedHorse1(e.target.value)} style={inputStyle}>
                               {horses.map((h) => (
                                 <option key={h.id} value={h.horse_number}>
-                                  {h.horse_number}番 {h.name}
+                                  {h.horse_number}番 {h.name} ({h.calculatedOdds || h.manual_odds || 5.0}倍)
                                 </option>
                               ))}
                             </select>
                           </div>
-                        )}
 
-                        {['3連複', '3連単'].includes(betType) && (
-                          <div>
-                            <label style={labelStyle}>3頭目 (3着)</label>
-                            <select value={selectedHorse3} onChange={(e) => setSelectedHorse3(e.target.value)} style={inputStyle}>
-                              {horses.map((h) => (
-                                <option key={h.id} value={h.horse_number}>
-                                  {h.horse_number}番 {h.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
+                          {['馬単', '馬連', 'ワイド', '3連複', '3連単'].includes(betType) && (
+                            <div>
+                              <label style={labelStyle}>2頭目 (2着/相手)</label>
+                              <select value={selectedHorse2} onChange={(e) => setSelectedHorse2(e.target.value)} style={inputStyle}>
+                                {horses.map((h) => (
+                                  <option key={h.id} value={h.horse_number}>
+                                    {h.horse_number}番 {h.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
+                          {['3連複', '3連単'].includes(betType) && (
+                            <div>
+                              <label style={labelStyle}>3頭目 (3着)</label>
+                              <select value={selectedHorse3} onChange={(e) => setSelectedHorse3(e.target.value)} style={inputStyle}>
+                                {horses.map((h) => (
+                                  <option key={h.id} value={h.horse_number}>
+                                    {h.horse_number}番 {h.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       <div>
-                        <label style={labelStyle}>賭け金 (G)</label>
+                        <label style={labelStyle}>1点あたりの賭け金 (G)</label>
                         <input type="number" step="100" min="100" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} style={inputStyle} />
                       </div>
                     </div>
 
                     <button
                       type="submit"
-                      disabled={currentRace?.status === 'closed'}
+                      disabled={currentRace?.status === 'closed' || isMaintenance}
                       style={{
                         width: '100%',
                         padding: '14px',
-                        backgroundColor: currentRace?.status === 'closed' ? '#94a3b8' : '#2563eb',
+                        backgroundColor: (currentRace?.status === 'closed' || isMaintenance) ? '#94a3b8' : '#2563eb',
                         color: '#fff',
                         border: 'none',
                         borderRadius: '10px',
                         fontWeight: 'bold',
                         fontSize: '16px',
-                        cursor: currentRace?.status === 'closed' ? 'not-allowed' : 'pointer',
+                        cursor: (currentRace?.status === 'closed' || isMaintenance) ? 'not-allowed' : 'pointer',
                       }}
                     >
-                      {currentRace?.status === 'closed' ? '🔒 投票締切中' : '🎫 馬券を購入する'}
+                      {isMaintenance ? '🛑 メンテナンス中' : currentRace?.status === 'closed' ? '🔒 投票締切中' : '🎫 馬券を購入する'}
                     </button>
                   </form>
                 )}
 
                 {/* 出走表（馬柱） */}
                 <h3 style={{ margin: '0 0 12px 0', color: '#1e3a8a', fontSize: '16px' }}>
-                  {isFinished ? '🏁 レース確定結果' : '🗞️ 出走表 ＆ 近走馬柱'}
+                  {isFinished ? '🏁 レース確定結果' : '🗞️ 出走表 ＆ 近走馬柱 (馬名タップで能力詳細)'}
                 </h3>
 
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
@@ -662,7 +733,7 @@ export default function IPATPage() {
                       <tr style={{ backgroundColor: '#1e3a8a', color: '#fff', textAlign: 'left' }}>
                         <th style={{ padding: '8px', textAlign: 'center', width: '35px' }}>印</th>
                         <th style={{ padding: '8px', textAlign: 'center', width: '35px' }}>{isFinished ? '着' : '枠'}</th>
-                        <th style={{ width: '130px' }}>馬名 / 騎手</th>
+                        <th style={{ width: '140px' }}>馬名 / 騎手</th>
                         <th>前走 (1走前)</th>
                         <th>前々走 (2走前)</th>
                         <th style={{ textAlign: 'right', paddingRight: '12px', width: '70px' }}>オッズ</th>
@@ -684,7 +755,13 @@ export default function IPATPage() {
                               {isFinished ? `${finishRank}着` : h.horse_number}
                             </td>
                             <td style={{ padding: '6px 8px' }}>
-                              <div style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '13px' }}>🐎 {h.name}</div>
+                              {/* 🐎 馬名タップで能力ポップアップ表示 */}
+                              <div
+                                onClick={() => setDetailModalHorse(h)}
+                                style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '13px', cursor: 'pointer', textDecoration: 'underline' }}
+                              >
+                                🐎 {h.name}
+                              </div>
                               <div style={{ color: '#2563eb', fontSize: '11px', fontWeight: 'bold' }}>🏇 {h.jockey}</div>
                             </td>
 
@@ -952,6 +1029,39 @@ export default function IPATPage() {
           </div>
         )}
       </div>
+
+      {/* 🐎 愛馬能力グラフモーダル (パターンA) */}
+      {detailModalHorse && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, padding: '16px' }}>
+          <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '16px', maxWidth: '400px', width: '100%', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 12px 0', color: '#16a34a', fontSize: '18px', fontWeight: 'bold' }}>
+              🐎 {detailModalHorse.name} （能力詳細）
+            </h3>
+
+            <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+              <div>騎手: <strong style={{ color: '#2563eb' }}>{detailModalHorse.jockey || '未設定'}</strong></div>
+              <div>オッズ: <strong style={{ color: '#dc2626' }}>{detailModalHorse.calculatedOdds || detailModalHorse.manual_odds || 5.0}倍</strong></div>
+              <div>調子: <strong style={{ color: '#16a34a' }}>{detailModalHorse.condition || '良好'}</strong></div>
+              <div>素質ランク: <strong style={{ color: '#dc2626' }}>【 {detailModalHorse.rank || 'B'} ランク 】</strong></div>
+              
+              <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>📊 能力ステータス:</div>
+                <div>スピード: {detailModalHorse.speed || 'B'}</div>
+                <div>スタミナ: {detailModalHorse.stamina || 'B'}</div>
+                <div>根性: {detailModalHorse.guts || 'B'}</div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setDetailModalHorse(null)}
+              style={{ width: '100%', padding: '12px', backgroundColor: '#1e3a8a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
