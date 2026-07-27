@@ -218,7 +218,7 @@ export default function IPATPage() {
     if (data) setMyBets([...data].reverse());
   };
 
-  // 🛡️ 端末制限（複アカブロック）付き ログイン・新規登録処理
+  // 🛡️ IP判定 ＋ 既存ユーザーログイン時IP自動更新機能
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!discordInput || !pinInput) return alert('名前とPINコードを入力してください');
@@ -226,26 +226,50 @@ export default function IPATPage() {
     const { data: users } = await supabase.from('users').select('*');
     const exUser = users?.find((u) => u.discord_name === discordInput);
 
+    // 🌐 現在アクセス中のIPアドレスを取得
+    let userIp = '';
+    try {
+      const ipRes = await fetch('https://api.ipify.org?format=json');
+      const ipData = await ipRes.json();
+      userIp = ipData.ip;
+    } catch (err) {
+      console.error('IP取得失敗:', err);
+    }
+
     if (exUser) {
-      // 既存ユーザーのログイン
+      // 【既存ユーザーのログイン】
       if (exUser.pin_code === pinInput) {
+        // 🔄 既存ユーザーのIPアドレスが未登録（NULL）か変更されていればDBを自動更新！
+        if (userIp && exUser.ip_address !== userIp) {
+          await supabase.from('users').update({ ip_address: userIp }).eq('id', exUser.id);
+          exUser.ip_address = userIp;
+        }
         setCurrentUser(exUser);
       } else {
         alert('PINコードが違います');
       }
     } else {
-      // 新規作成時：ブラウザの記憶をチェックして複アカをブロック
-      const hasAccountCreated = localStorage.getItem('app_account_created');
-      if (hasAccountCreated) {
-        return alert(
-          '❌ 複数アカウントの作成は禁止されています！\n（すでにこの端末からアカウントが作成されています）'
-        );
+      // 【新規アカウント作成時の判定】
+      if (userIp) {
+        const isIpExists = users?.some((u) => u.ip_address === userIp);
+        if (isIpExists) {
+          return alert(
+            '❌ 複数アカウントの作成は禁止されています！\n（すでにこのネットワーク/回線からアカウントが作成されています）'
+          );
+        }
       }
 
       if (confirm(`「${discordInput}」さんを新規登録しますか？（10,000,000G付与）`)) {
         const { data: inserted, error } = await supabase
           .from('users')
-          .insert([{ discord_name: discordInput, pin_code: pinInput, balance: 10000000 }])
+          .insert([
+            {
+              discord_name: discordInput,
+              pin_code: pinInput,
+              balance: 10000000,
+              ip_address: userIp,
+            },
+          ])
           .select('*');
 
         if (error) {
@@ -253,9 +277,6 @@ export default function IPATPage() {
         }
 
         if (inserted && inserted.length > 0) {
-          // 🎉 登録完了の証として、端末にフラグを保存する（二度と作れなくなる）
-          localStorage.setItem('app_account_created', 'true');
-          
           setCurrentUser(inserted[0]);
           alert('🎉 登録完了！ 10,000,000 G 付与！');
         }
@@ -422,9 +443,8 @@ export default function IPATPage() {
           >
             <div style={{ fontSize: '40px', marginBottom: '12px' }}>🎫</div>
             <h2 style={{ color: '#1e3a8a', margin: '0 0 10px 0', fontSize: '20px' }}>IPAT ログイン</h2>
-
             <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '20px' }}>
-              <input type="text" placeholder="ユーザー名" value={discordInput} onChange={(e) => setDiscordInput(e.target.value)} style={inputStyle} />
+              <input type="text" placeholder="ユーザー名 (Discord名)" value={discordInput} onChange={(e) => setDiscordInput(e.target.value)} style={inputStyle} />
               <input type="password" maxLength={4} value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="暗証番号 (4桁)" style={{ ...inputStyle, textAlign: 'center', letterSpacing: '6px' }} />
               <button type="submit" style={{ padding: '14px', backgroundColor: '#1e3a8a', color: '#fff', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', border: 'none', cursor: 'pointer' }}>
                 ログイン / 新規登録
@@ -512,7 +532,7 @@ export default function IPATPage() {
                   </div>
                 )}
 
-                {/* 投票フォーム */}
+                {/* 📱 投票フォーム */}
                 {!isFinished && (
                   <form onSubmit={handleBuyBet} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
@@ -635,7 +655,7 @@ export default function IPATPage() {
                                   <span style={{ fontWeight: 'bold', color: last1.rank_result === 1 ? '#ca8a04' : '#1e3a8a' }}>
                                     {last1.rank_result}着 / {last1.race_name}
                                   </span>
-                                 </div>
+                                </div>
                               ) : (
                                 <span style={{ color: '#cbd5e1' }}>前走なし</span>
                               )}
@@ -919,5 +939,4 @@ function TabBtn({ active, onClick, text }: { active: boolean; onClick: () => voi
 }
 
 const labelStyle = { display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px', fontWeight: 'bold' };
-// 👇 ご指定いただいた新しい inputStyle に置き換えました！
 const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', color: '#0f172a', fontSize: '13px' };
