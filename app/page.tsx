@@ -25,10 +25,8 @@ export default function IPATPage() {
   const [auctions, setAuctions] = useState<any[]>([]);
   const [bidAmountInput, setBidAmountInput] = useState<number>(100000);
 
-  // 🗞️ 馬柱（過去戦績データ）
   const [pastResults, setPastResults] = useState<{ [key: string]: any[] }>({});
 
-  // 投票用
   const [betType, setBetType] = useState('単勝');
   const [selectedHorse1, setSelectedHorse1] = useState('');
   const [selectedHorse2, setSelectedHorse2] = useState('');
@@ -112,7 +110,6 @@ export default function IPATPage() {
     } catch (e) { console.error(e); }
   };
 
-  // 🗞️ 馬柱用の全頭戦績ロード
   const fetchPastResults = async () => {
     try {
       const { data } = await supabase.from('horse_results').select('*');
@@ -314,102 +311,114 @@ export default function IPATPage() {
 
   return (
     <div style={{ backgroundColor: '#f1f5f9', minHeight: '100vh', fontFamily: 'sans-serif', color: '#0f172a' }}>
+      
+      {/* 📱 スマホ対応レスポンシブヘッダー */}
       <header
         style={{
           backgroundColor: '#1e3a8a',
           color: '#fff',
-          padding: '16px 32px',
+          padding: '12px 16px',
           display: 'flex',
+          flexDirection: 'row',
+          flexWrap: 'wrap',
           justifyContent: 'space-between',
           alignItems: 'center',
+          gap: '12px',
           boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <span style={{ backgroundColor: '#2563eb', color: '#fff', padding: '6px 16px', fontWeight: '900', borderRadius: '30px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ backgroundColor: '#2563eb', color: '#fff', padding: '4px 12px', fontWeight: '900', borderRadius: '20px', fontSize: '13px' }}>
             🍏 青森県競馬
           </span>
-          <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#bfdbfe' }}>🎫 即パット IPAT投票システム</span>
+          <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#bfdbfe' }}>🎫 即パット</span>
         </div>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           {currentUser ? (
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <button
                 onClick={handleClaimDailyBonus}
                 disabled={hasClaimedBonus}
                 style={{
-                  padding: '8px 16px',
-                  borderRadius: '20px',
+                  padding: '6px 12px',
+                  borderRadius: '16px',
                   border: 'none',
                   fontWeight: 'bold',
                   cursor: hasClaimedBonus ? 'default' : 'pointer',
                   backgroundColor: hasClaimedBonus ? '#64748b' : '#eab308',
                   color: '#fff',
-                  fontSize: '13px',
+                  fontSize: '12px',
                 }}
               >
-                {hasClaimedBonus ? '🎁 本日受取済' : '🎁 ログボ受け取る'}
+                {hasClaimedBonus ? '🎁 受取済' : '🎁 ログボ'}
               </button>
 
-              <div style={{ backgroundColor: '#1e40af', padding: '8px 20px', borderRadius: '25px', display: 'flex', gap: '12px', alignItems: 'center', border: '1px solid #60a5fa' }}>
-                {currentUser.title && <span style={{ backgroundColor: '#f59e0b', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold' }}>{currentUser.title}</span>}
-                <span>👤 {currentUser.discord_name} 様</span>
-                <span style={{ color: '#fef08a', fontWeight: 'bold' }}>{(currentUser.balance || 0).toLocaleString()} G</span>
+              <div style={{ backgroundColor: '#1e40af', padding: '6px 14px', borderRadius: '20px', display: 'flex', gap: '8px', alignItems: 'center', border: '1px solid #60a5fa', fontSize: '13px' }}>
+                {currentUser.title && <span style={{ backgroundColor: '#f59e0b', color: '#fff', padding: '2px 6px', borderRadius: '10px', fontSize: '10px', fontWeight: 'bold' }}>{currentUser.title}</span>}
+                <span style={{ fontWeight: 'bold' }}>{currentUser.discord_name}</span>
+                <span style={{ color: '#fef08a', fontWeight: 'bold' }}>{(currentUser.balance || 0).toLocaleString()}G</span>
               </div>
             </div>
           ) : (
-            <span style={{ color: '#93c5fd', fontSize: '14px' }}>未ログイン</span>
+            <span style={{ color: '#93c5fd', fontSize: '12px' }}>未ログイン</span>
           )}
 
-          <Link href="/owner" style={{ backgroundColor: '#16a34a', color: '#fff', padding: '8px 16px', borderRadius: '8px', textDecoration: 'none', fontWeight: 'bold', fontSize: '14px' }}>
-            🐴 馬主ラウンジ ↗
-          </Link>
-          <Link href="/admin" style={{ backgroundColor: '#2563eb', color: '#fff', padding: '8px 16px', borderRadius: '8px', textDecoration: 'none', fontWeight: 'bold', fontSize: '14px' }}>
-            ⚙️ 運営管理 ↗
-          </Link>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <Link href="/owner" style={{ backgroundColor: '#16a34a', color: '#fff', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold', fontSize: '12px' }}>
+              🐴 馬主
+            </Link>
+            <Link href="/admin" style={{ backgroundColor: '#2563eb', color: '#fff', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold', fontSize: '12px' }}>
+              ⚙️ 管理
+            </Link>
+          </div>
         </div>
       </header>
 
-      <div style={{ maxWidth: '1000px', margin: '30px auto', padding: '0 20px' }}>
+      {/* メインコンテナ（スマホでは左右余白を詰める） */}
+      <div style={{ maxWidth: '1000px', margin: '16px auto', padding: '0 12px' }}>
         {!currentUser ? (
           <div
             style={{
               backgroundColor: '#fff',
-              padding: '50px',
+              padding: '32px 20px',
               borderRadius: '20px',
               textAlign: 'center',
               maxWidth: '400px',
-              margin: '50px auto',
+              margin: '30px auto',
               boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)',
               border: '1px solid #e2e8f0',
             }}
           >
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🎫</div>
-            <h2 style={{ color: '#1e3a8a', margin: '0 0 10px 0' }}>IPAT ログイン</h2>
-            <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '24px' }}>
+            <div style={{ fontSize: '40px', marginBottom: '12px' }}>🎫</div>
+            <h2 style={{ color: '#1e3a8a', margin: '0 0 10px 0', fontSize: '20px' }}>IPAT ログイン</h2>
+            <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '20px' }}>
               <input type="text" placeholder="ユーザー名 (Discord名)" value={discordInput} onChange={(e) => setDiscordInput(e.target.value)} style={inputStyle} />
               <input type="password" maxLength={4} value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="暗証番号 (4桁)" style={{ ...inputStyle, textAlign: 'center', letterSpacing: '6px' }} />
-              <button type="submit" style={{ padding: '16px', backgroundColor: '#1e3a8a', color: '#fff', borderRadius: '10px', fontWeight: 'bold', fontSize: '18px', border: 'none', cursor: 'pointer' }}>
+              <button type="submit" style={{ padding: '14px', backgroundColor: '#1e3a8a', color: '#fff', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', border: 'none', cursor: 'pointer' }}>
                 ログイン / 新規登録
               </button>
             </form>
           </div>
         ) : (
-          <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
-            <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px', overflowX: 'auto' }}>
-              <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text={isFinished ? '🏁 レース確定結果・払戻金' : '🎫 馬券投票'} />
+          <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0' }}>
+            
+            {/* 📱 スマホ対応 横スクロールタブナビゲーション */}
+            <div style={{ display: 'flex', gap: '6px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px', marginBottom: '20px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text={isFinished ? '🏁 結果' : '🎫 投票'} />
               <TabBtn active={mainTab === 'history'} onClick={() => setMainTab('history')} text={`📋 履歴 (${myBets.length})`} />
-              <TabBtn active={mainTab === 'auction'} onClick={() => setMainTab('auction')} text={`🔨 セリ市 (${auctions.length})`} />
-              <TabBtn active={mainTab === 'ranking'} onClick={() => setMainTab('ranking')} text="👑 資産ランキング" />
-              <TabBtn active={mainTab === 'chat'} onClick={() => setMainTab('chat')} text="💬 パドック雑談" />
+              <TabBtn active={mainTab === 'auction'} onClick={() => setMainTab('auction')} text={`🔨 セリ (${auctions.length})`} />
+              <TabBtn active={mainTab === 'ranking'} onClick={() => setMainTab('ranking')} text="👑 ランキング" />
+              <TabBtn active={mainTab === 'chat'} onClick={() => setMainTab('chat')} text="💬 チャット" />
               <TabBtn active={mainTab === 'news'} onClick={() => setMainTab('news')} text={`📢 アプデ (${newsList.length})`} />
             </div>
 
             {mainTab === 'bet' && (
               <div>
-                <div style={{ marginBottom: '20px' }}>
-                  <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', marginBottom: '8px' }}>レース切り替え (1〜12R):</div>
-                  <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '8px' }}>
+                {/* 1R〜12R切り替えボタン */}
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>レース切り替え (1〜12R):</div>
+                  <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '6px', WebkitOverflowScrolling: 'touch' }}>
                     {Array.from({ length: 12 }, (_, i) => i + 1).map((no) => {
                       const r = races.find((race) => race.race_number === no);
                       const isRaceClosed = r?.status === 'closed';
@@ -421,16 +430,18 @@ export default function IPATPage() {
                           key={no}
                           onClick={() => setSelectedRaceNo(no)}
                           style={{
-                            padding: '10px 18px',
-                            borderRadius: '10px',
+                            padding: '8px 14px',
+                            borderRadius: '8px',
                             border: '1px solid #cbd5e1',
                             fontWeight: 'bold',
                             cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            fontSize: '13px',
                             backgroundColor: selectedRaceNo === no ? '#1e3a8a' : '#f8fafc',
                             color: selectedRaceNo === no ? '#ffffff' : '#475569',
                           }}
                         >
-                          {grade !== '一般' && <span style={{ fontSize: '11px', backgroundColor: grade === 'G1' ? '#ef4444' : grade === 'G2' ? '#f59e0b' : '#3b82f6', color: '#fff', padding: '2px 5px', borderRadius: '4px', marginRight: '4px' }}>{grade}</span>}
+                          {grade !== '一般' && <span style={{ fontSize: '10px', backgroundColor: grade === 'G1' ? '#ef4444' : grade === 'G2' ? '#f59e0b' : '#3b82f6', color: '#fff', padding: '2px 4px', borderRadius: '4px', marginRight: '4px' }}>{grade}</span>}
                           {no}R {isRaceFinished ? '🏁' : isRaceClosed ? '🔒' : ''}
                         </button>
                       );
@@ -438,40 +449,44 @@ export default function IPATPage() {
                   </div>
                 </div>
 
+                {/* レース情報カード */}
                 {currentRace && (
-                  <div style={{ backgroundColor: isFinished ? '#f0fdf4' : '#eff6ff', padding: '16px 20px', borderRadius: '12px', marginBottom: '24px', border: `1px solid ${isFinished ? '#86efac' : '#bfdbfe'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ backgroundColor: isFinished ? '#f0fdf4' : '#eff6ff', padding: '14px', borderRadius: '12px', marginBottom: '20px', border: `1px solid ${isFinished ? '#86efac' : '#bfdbfe'}`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                         {currentRace.grade && currentRace.grade !== '一般' && (
-                          <span style={{ backgroundColor: currentRace.grade === 'G1' ? '#dc2626' : currentRace.grade === 'G2' ? '#d97706' : '#2563eb', color: '#fff', fontSize: '12px', fontWeight: 'bold', padding: '4px 10px', borderRadius: '6px' }}>
+                          <span style={{ backgroundColor: currentRace.grade === 'G1' ? '#dc2626' : currentRace.grade === 'G2' ? '#d97706' : '#2563eb', color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '4px' }}>
                             🏆 {currentRace.grade} 重賞
                           </span>
                         )}
-                        <span style={{ fontSize: '20px', fontWeight: 'bold', color: isFinished ? '#16a34a' : '#1e3a8a' }}>
+                        <span style={{ fontSize: '17px', fontWeight: 'bold', color: isFinished ? '#16a34a' : '#1e3a8a' }}>
                           【{currentRace.race_number}R】{currentRace.title || '特別競走'}
                         </span>
                       </div>
-                      <div style={{ marginTop: '6px', fontSize: '14px', color: '#475569', fontWeight: 'bold' }}>
-                        {currentRace.distance_m || 1800}m / {currentRace.track_condition || '良'} / 天候: {currentRace.weather || '晴'} / 1着賞金: {(currentRace.prize || 1000000).toLocaleString()} G
+
+                      <div>
+                        {isFinished ? (
+                          <span style={{ backgroundColor: '#16a34a', color: '#fff', padding: '4px 10px', borderRadius: '12px', fontWeight: 'bold', fontSize: '12px' }}>🏁 結果確定</span>
+                        ) : currentRace.status === 'closed' ? (
+                          <span style={{ backgroundColor: '#dc2626', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px' }}>🔒 締切</span>
+                        ) : (
+                          <span style={{ backgroundColor: '#2563eb', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px' }}>🟢 受付中</span>
+                        )}
                       </div>
                     </div>
-                    <div>
-                      {isFinished ? (
-                        <span style={{ backgroundColor: '#16a34a', color: '#fff', padding: '6px 16px', borderRadius: '20px', fontWeight: 'bold', fontSize: '14px' }}>🏁 レース結果確定</span>
-                      ) : currentRace.status === 'closed' ? (
-                        <span style={{ backgroundColor: '#dc2626', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px' }}>🔒 投票締め切り</span>
-                      ) : (
-                        <span style={{ backgroundColor: '#2563eb', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px' }}>🟢 投票受付中</span>
-                      )}
+
+                    <div style={{ fontSize: '12px', color: '#475569', fontWeight: 'bold' }}>
+                      {currentRace.distance_m || 1800}m / {currentRace.track_condition || '良'} / 天候: {currentRace.weather || '晴'} / 1着賞金: {(currentRace.prize || 1000000).toLocaleString()} G
                     </div>
                   </div>
                 )}
 
+                {/* 📱 投票フォーム（スマホでは1列縦並び） */}
                 {!isFinished && (
-                  <form onSubmit={handleBuyBet} style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '28px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                  <form onSubmit={handleBuyBet} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                       <div>
-                        <label style={labelStyle}>券種を選択</label>
+                        <label style={labelStyle}>① 券種</label>
                         <select value={betType} onChange={(e) => setBetType(e.target.value)} style={inputStyle}>
                           {['単勝', '複勝', '馬単', '馬連', 'ワイド', '3連複', '3連単'].map((t) => (
                             <option key={t} value={t}>
@@ -481,185 +496,167 @@ export default function IPATPage() {
                         </select>
                       </div>
 
-                      <div>
-                        <label style={labelStyle}>1頭目 (軸馬/1着)</label>
-                        <select value={selectedHorse1} onChange={(e) => setSelectedHorse1(e.target.value)} style={inputStyle}>
-                          {horses.map((h) => (
-                            <option key={h.id} value={h.horse_number}>
-                              {h.horse_number}番 {h.name} (オッズ: {h.calculatedOdds || h.manual_odds || 5.0}倍)
-                            </option>
-                          ))}
-                        </select>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+                        <div>
+                          <label style={labelStyle}>1頭目 (1着/軸)</label>
+                          <select value={selectedHorse1} onChange={(e) => setSelectedHorse1(e.target.value)} style={inputStyle}>
+                            {horses.map((h) => (
+                              <option key={h.id} value={h.horse_number}>
+                                {h.horse_number}番 {h.name} ({h.calculatedOdds || h.manual_odds || 5.0}倍)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {['馬単', '馬連', 'ワイド', '3連複', '3連単'].includes(betType) && (
+                          <div>
+                            <label style={labelStyle}>2頭目 (2着/相手)</label>
+                            <select value={selectedHorse2} onChange={(e) => setSelectedHorse2(e.target.value)} style={inputStyle}>
+                              {horses.map((h) => (
+                                <option key={h.id} value={h.horse_number}>
+                                  {h.horse_number}番 {h.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {['3連複', '3連単'].includes(betType) && (
+                          <div>
+                            <label style={labelStyle}>3頭目 (3着)</label>
+                            <select value={selectedHorse3} onChange={(e) => setSelectedHorse3(e.target.value)} style={inputStyle}>
+                              {horses.map((h) => (
+                                <option key={h.id} value={h.horse_number}>
+                                  {h.horse_number}番 {h.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
 
-                      {['馬単', '馬連', 'ワイド', '3連複', '3連単'].includes(betType) && (
-                        <div>
-                          <label style={labelStyle}>2頭目 (相手/2着)</label>
-                          <select value={selectedHorse2} onChange={(e) => setSelectedHorse2(e.target.value)} style={inputStyle}>
-                            {horses.map((h) => (
-                              <option key={h.id} value={h.horse_number}>
-                                {h.horse_number}番 {h.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      {['3連複', '3連単'].includes(betType) && (
-                        <div>
-                          <label style={labelStyle}>3頭目 (3着)</label>
-                          <select value={selectedHorse3} onChange={(e) => setSelectedHorse3(e.target.value)} style={inputStyle}>
-                            {horses.map((h) => (
-                              <option key={h.id} value={h.horse_number}>
-                                {h.horse_number}番 {h.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
-                      <div style={{ flex: 1 }}>
+                      <div>
                         <label style={labelStyle}>賭け金 (G)</label>
                         <input type="number" step="100" min="100" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} style={inputStyle} />
                       </div>
-                      <button
-                        type="submit"
-                        disabled={currentRace?.status === 'closed'}
-                        style={{
-                          padding: '14px 28px',
-                          backgroundColor: currentRace?.status === 'closed' ? '#94a3b8' : '#2563eb',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: '10px',
-                          fontWeight: 'bold',
-                          fontSize: '16px',
-                          cursor: currentRace?.status === 'closed' ? 'not-allowed' : 'pointer',
-                        }}
-                      >
-                        {currentRace?.status === 'closed' ? '🔒 投票締切中' : '🎫 馬券を購入する'}
-                      </button>
                     </div>
+
+                    <button
+                      type="submit"
+                      disabled={currentRace?.status === 'closed'}
+                      style={{
+                        width: '100%',
+                        padding: '14px',
+                        backgroundColor: currentRace?.status === 'closed' ? '#94a3b8' : '#2563eb',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '10px',
+                        fontWeight: 'bold',
+                        fontSize: '16px',
+                        cursor: currentRace?.status === 'closed' ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {currentRace?.status === 'closed' ? '🔒 投票締切中' : '🎫 馬券を購入する'}
+                    </button>
                   </form>
                 )}
 
-                {/* 🗞️ netkeiba風 本格馬柱 ＆ リアルタイムオッズ出走表 */}
-                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {isFinished ? '🏁 レース確定結果順位表' : '🗞️ netkeiba風 馬柱出走表 ＆ 近走成績'}
+                {/* 📱 スマホ横スクロール可能テーブル（馬柱） */}
+                <h3 style={{ margin: '0 0 12px 0', color: '#1e3a8a', fontSize: '16px' }}>
+                  {isFinished ? '🏁 レース確定結果' : '🗞️ 出走表 ＆ 近走馬柱'}
                 </h3>
 
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', borderRadius: '12px', overflow: 'hidden', border: '1px solid #cbd5e1' }}>
-                  <thead>
-                    <tr style={{ backgroundColor: '#1e3a8a', color: '#fff', textAlign: 'left' }}>
-                      <th style={{ padding: '10px', textAlign: 'center', width: '40px' }}>印</th>
-                      <th style={{ padding: '10px', textAlign: 'center', width: '40px' }}>{isFinished ? '着' : '枠'}</th>
-                      <th style={{ width: '150px' }}>馬名 / 騎手</th>
-                      <th>前走 (1走前)</th>
-                      <th>前々走 (2走前)</th>
-                      <th style={{ textAlign: 'right', paddingRight: '16px', width: '90px' }}>オッズ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(isFinished ? resultHorses : horses).map((h, idx) => {
-                      const finishRank = idx + 1;
-                      const hResults = pastResults[h.name] || [];
-                      const last1 = hResults[hResults.length - 1];
-                      const last2 = hResults[hResults.length - 2];
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                  <table style={{ width: '100%', minWidth: '550px', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: '#1e3a8a', color: '#fff', textAlign: 'left' }}>
+                        <th style={{ padding: '8px', textAlign: 'center', width: '35px' }}>印</th>
+                        <th style={{ padding: '8px', textAlign: 'center', width: '35px' }}>{isFinished ? '着' : '枠'}</th>
+                        <th style={{ width: '130px' }}>馬名 / 騎手</th>
+                        <th>前走 (1走前)</th>
+                        <th>前々走 (2走前)</th>
+                        <th style={{ textAlign: 'right', paddingRight: '12px', width: '70px' }}>オッズ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(isFinished ? resultHorses : horses).map((h, idx) => {
+                        const finishRank = idx + 1;
+                        const hResults = pastResults[h.name] || [];
+                        const last1 = hResults[hResults.length - 1];
+                        const last2 = hResults[hResults.length - 2];
 
-                      return (
-                        <tr key={h.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: '#ffffff' }}>
-                          <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '16px', color: '#dc2626' }}>
-                            {h.mark || (idx === 0 ? '◎' : idx === 1 ? '○' : idx === 2 ? '▲' : '△')}
-                          </td>
-                          <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '14px' }}>
-                            {isFinished ? `${finishRank}着` : h.horse_number}
-                          </td>
-                          <td style={{ padding: '8px' }}>
-                            <div style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '14px' }}>🐎 {h.name}</div>
-                            <div style={{ color: '#2563eb', fontSize: '12px', fontWeight: 'bold', marginTop: '2px' }}>🏇 {h.jockey}</div>
-                          </td>
+                        return (
+                          <tr key={h.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: '#ffffff' }}>
+                            <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '15px', color: '#dc2626' }}>
+                              {h.mark || (idx === 0 ? '◎' : idx === 1 ? '○' : idx === 2 ? '▲' : '△')}
+                            </td>
+                            <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '13px' }}>
+                              {isFinished ? `${finishRank}着` : h.horse_number}
+                            </td>
+                            <td style={{ padding: '6px 8px' }}>
+                              <div style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '13px' }}>🐎 {h.name}</div>
+                              <div style={{ color: '#2563eb', fontSize: '11px', fontWeight: 'bold' }}>🏇 {h.jockey}</div>
+                            </td>
 
-                          {/* 前走成績 */}
-                          <td style={{ padding: '8px', backgroundColor: '#f8fafc', fontSize: '12px' }}>
-                            {last1 ? (
-                              <div>
-                                <span style={{ fontWeight: 'bold', color: last1.rank_result === 1 ? '#ca8a04' : '#1e3a8a' }}>
-                                  {last1.rank_result}着 / {last1.race_name}
-                                </span>
-                                <div style={{ color: '#64748b' }}>🏇 {last1.jockey}</div>
-                              </div>
-                            ) : (
-                              <span style={{ color: '#cbd5e1' }}>前走なし (新馬)</span>
-                            )}
-                          </td>
+                            <td style={{ padding: '6px', backgroundColor: '#f8fafc', fontSize: '11px' }}>
+                              {last1 ? (
+                                <div>
+                                  <span style={{ fontWeight: 'bold', color: last1.rank_result === 1 ? '#ca8a04' : '#1e3a8a' }}>
+                                    {last1.rank_result}着 / {last1.race_name}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span style={{ color: '#cbd5e1' }}>前走なし</span>
+                              )}
+                            </td>
 
-                          {/* 前々走成績 */}
-                          <td style={{ padding: '8px', backgroundColor: '#f8fafc', fontSize: '12px' }}>
-                            {last2 ? (
-                              <div>
-                                <span style={{ fontWeight: 'bold', color: last2.rank_result === 1 ? '#ca8a04' : '#1e3a8a' }}>
-                                  {last2.rank_result}着 / {last2.race_name}
-                                </span>
-                                <div style={{ color: '#64748b' }}>🏇 {last2.jockey}</div>
-                              </div>
-                            ) : (
-                              <span style={{ color: '#cbd5e1' }}>-</span>
-                            )}
-                          </td>
+                            <td style={{ padding: '6px', backgroundColor: '#f8fafc', fontSize: '11px' }}>
+                              {last2 ? (
+                                <div>
+                                  <span style={{ fontWeight: 'bold', color: last2.rank_result === 1 ? '#ca8a04' : '#1e3a8a' }}>
+                                    {last2.rank_result}着 / {last2.race_name}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span style={{ color: '#cbd5e1' }}>-</span>
+                              )}
+                            </td>
 
-                          <td style={{ textAlign: 'right', paddingRight: '16px' }}>
-                            <span style={{ fontSize: '15px', fontWeight: '900', color: '#dc2626' }}>
-                              {h.calculatedOdds || h.manual_odds || 5.0} 倍
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            <td style={{ textAlign: 'right', paddingRight: '12px' }}>
+                              <span style={{ fontSize: '14px', fontWeight: '900', color: '#dc2626' }}>
+                                {h.calculatedOdds || h.manual_odds || 5.0}倍
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
 
                 {isFinished && (
-                  <div style={{ marginTop: '32px', backgroundColor: '#f8fafc', padding: '24px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
-                    <h4 style={{ margin: '0 0 16px 0', color: '#16a34a', fontSize: '18px', fontWeight: 'bold' }}>
+                  <div style={{ marginTop: '24px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                    <h4 style={{ margin: '0 0 12px 0', color: '#16a34a', fontSize: '16px', fontWeight: 'bold' }}>
                       💰 確定 払戻金（配当）一覧
                     </h4>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', backgroundColor: '#fff', border: '1px solid #cbd5e1' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#16a34a', color: '#fff', textAlign: 'left' }}>
-                          <th style={{ padding: '10px 16px' }}>券種</th>
-                          <th>馬番・組み合わせ</th>
-                          <th style={{ textAlign: 'right', paddingRight: '16px' }}>払戻金 (100Gあたり)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                          <td style={{ padding: '10px 16px', fontWeight: 'bold' }}>単勝</td>
-                          <td style={{ fontWeight: 'bold', color: '#dc2626' }}>{currentRace.first_horse}番</td>
-                          <td style={{ textAlign: 'right', paddingRight: '16px', fontWeight: 'bold', color: '#16a34a' }}>350 G</td>
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                          <td style={{ padding: '10px 16px', fontWeight: 'bold' }}>馬連</td>
-                          <td style={{ fontWeight: 'bold' }}>{currentRace.first_horse} - {currentRace.second_horse}</td>
-                          <td style={{ textAlign: 'right', paddingRight: '16px', fontWeight: 'bold', color: '#16a34a' }}>850 G</td>
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                          <td style={{ padding: '10px 16px', fontWeight: 'bold' }}>馬単</td>
-                          <td style={{ fontWeight: 'bold' }}>{currentRace.first_horse} → {currentRace.second_horse}</td>
-                          <td style={{ textAlign: 'right', paddingRight: '16px', fontWeight: 'bold', color: '#16a34a' }}>1,500 G</td>
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                          <td style={{ padding: '10px 16px', fontWeight: 'bold' }}>3連複</td>
-                          <td style={{ fontWeight: 'bold' }}>{currentRace.first_horse} - {currentRace.second_horse} - {currentRace.third_horse}</td>
-                          <td style={{ textAlign: 'right', paddingRight: '16px', fontWeight: 'bold', color: '#16a34a' }}>2,200 G</td>
-                        </tr>
-                        <tr>
-                          <td style={{ padding: '10px 16px', fontWeight: 'bold' }}>3連単</td>
-                          <td style={{ fontWeight: 'bold', color: '#dc2626' }}>{currentRace.first_horse} → {currentRace.second_horse} → {currentRace.third_horse}</td>
-                          <td style={{ textAlign: 'right', paddingRight: '16px', fontWeight: 'bold', color: '#16a34a' }}>6,500 G</td>
-                        </tr>
-                      </tbody>
-                    </table>
+                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                      <table style={{ width: '100%', minWidth: '400px', borderCollapse: 'collapse', fontSize: '12px', backgroundColor: '#fff', border: '1px solid #cbd5e1' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: '#16a34a', color: '#fff', textAlign: 'left' }}>
+                            <th style={{ padding: '8px 12px' }}>券種</th>
+                            <th>馬番・組み合わせ</th>
+                            <th style={{ textAlign: 'right', paddingRight: '12px' }}>払戻金 (100G)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '8px 12px', fontWeight: 'bold' }}>単勝</td><td style={{ fontWeight: 'bold', color: '#dc2626' }}>{currentRace.first_horse}番</td><td style={{ textAlign: 'right', paddingRight: '12px', fontWeight: 'bold', color: '#16a34a' }}>350 G</td></tr>
+                          <tr style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '8px 12px', fontWeight: 'bold' }}>馬連</td><td style={{ fontWeight: 'bold' }}>{currentRace.first_horse} - {currentRace.second_horse}</td><td style={{ textAlign: 'right', paddingRight: '12px', fontWeight: 'bold', color: '#16a34a' }}>850 G</td></tr>
+                          <tr style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '8px 12px', fontWeight: 'bold' }}>馬単</td><td style={{ fontWeight: 'bold' }}>{currentRace.first_horse} → {currentRace.second_horse}</td><td style={{ textAlign: 'right', paddingRight: '12px', fontWeight: 'bold', color: '#16a34a' }}>1,500 G</td></tr>
+                          <tr style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '8px 12px', fontWeight: 'bold' }}>3連複</td><td style={{ fontWeight: 'bold' }}>{currentRace.first_horse} - {currentRace.second_horse} - {currentRace.third_horse}</td><td style={{ textAlign: 'right', paddingRight: '12px', fontWeight: 'bold', color: '#16a34a' }}>2,200 G</td></tr>
+                          <tr><td style={{ padding: '8px 12px', fontWeight: 'bold' }}>3連単</td><td style={{ fontWeight: 'bold', color: '#dc2626' }}>{currentRace.first_horse} → {currentRace.second_horse} → {currentRace.third_horse}</td><td style={{ textAlign: 'right', paddingRight: '12px', fontWeight: 'bold', color: '#16a34a' }}>6,500 G</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>
@@ -667,28 +664,28 @@ export default function IPATPage() {
 
             {mainTab === 'auction' && (
               <div>
-                <h3 style={{ margin: '0 0 16px 0', color: '#d97706' }}>🔨 競走馬 セリ市・オークション会場</h3>
+                <h3 style={{ margin: '0 0 16px 0', color: '#d97706', fontSize: '18px' }}>🔨 競走馬 セリ市会場</h3>
                 {auctions.length === 0 ? (
-                  <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                  <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
                     現在出品中の競走馬はありません。
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' }}>
                     {auctions.map((a) => (
-                      <div key={a.id} style={{ backgroundColor: a.is_official ? '#fefce8' : '#f8fafc', padding: '20px', borderRadius: '12px', border: `2px solid ${a.is_official ? '#eab308' : '#cbd5e1'}` }}>
+                      <div key={a.id} style={{ backgroundColor: a.is_official ? '#fefce8' : '#f8fafc', padding: '16px', borderRadius: '12px', border: `2px solid ${a.is_official ? '#eab308' : '#cbd5e1'}` }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                          <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#d97706' }}>🐎 {a.horse_name}</span>
-                          {a.is_official && <span style={{ backgroundColor: '#dc2626', color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '10px' }}>👑 運営公式</span>}
+                          <span style={{ fontWeight: 'bold', fontSize: '16px', color: '#d97706' }}>🐎 {a.horse_name}</span>
+                          {a.is_official && <span style={{ backgroundColor: '#dc2626', color: '#fff', fontSize: '10px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '8px' }}>👑 運営公式</span>}
                         </div>
-                        <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '16px' }}>
+                        <div style={{ fontSize: '12px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
                           <div>出品者: <strong>{a.seller_name}</strong></div>
-                          <div>現在最高額: <strong style={{ color: '#16a34a', fontSize: '16px' }}>{(a.current_bid || 0).toLocaleString()} G</strong></div>
+                          <div>現在最高額: <strong style={{ color: '#16a34a', fontSize: '15px' }}>{(a.current_bid || 0).toLocaleString()} G</strong></div>
                           <div>最高額提示者: <strong>{a.highest_bidder}</strong> 様</div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '6px' }}>
                           <input type="number" step="100000" min={a.current_bid + 100000} value={bidAmountInput} onChange={e => setBidAmountInput(Number(e.target.value))} style={inputStyle} />
-                          <button onClick={() => handlePlaceBid(a.id, a.current_bid)} style={{ padding: '10px 16px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          <button onClick={() => handlePlaceBid(a.id, a.current_bid)} style={{ padding: '8px 14px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                             入札 🔨
                           </button>
                         </div>
@@ -701,8 +698,8 @@ export default function IPATPage() {
 
             {mainTab === 'ranking' && (
               <div>
-                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>👑 青森県競馬 リアルタイム資産ランキング ＆ 称号者一覧</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '18px' }}>👑 資産ランキング ＆ 称号者</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {rankingUsers.map((u, index) => {
                     const rank = index + 1;
                     const crown = rank === 1 ? '👑 金冠' : rank === 2 ? '🥈 銀冠' : rank === 3 ? '🥉 銅冠' : `${rank}位`;
@@ -713,7 +710,7 @@ export default function IPATPage() {
                         key={u.id}
                         style={{
                           backgroundColor: isMe ? '#eff6ff' : '#f8fafc',
-                          padding: '16px 20px',
+                          padding: '12px 16px',
                           borderRadius: '12px',
                           border: `2px solid ${rank === 1 ? '#eab308' : isMe ? '#2563eb' : '#cbd5e1'}`,
                           display: 'flex',
@@ -721,18 +718,18 @@ export default function IPATPage() {
                           alignItems: 'center',
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                          <span style={{ fontSize: '18px', fontWeight: '900', color: rank === 1 ? '#ca8a04' : '#475569', width: '80px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '15px', fontWeight: '900', color: rank === 1 ? '#ca8a04' : '#475569', width: '60px' }}>
                             {crown}
                           </span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {u.title && <span style={{ backgroundColor: '#f59e0b', color: '#fff', fontSize: '11px', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>{u.title}</span>}
-                            <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#0f172a' }}>
-                              👤 {u.discord_name} {isMe && '(あなた)'}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            {u.title && <span style={{ backgroundColor: '#f59e0b', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '8px', fontWeight: 'bold' }}>{u.title}</span>}
+                            <span style={{ fontWeight: 'bold', fontSize: '15px', color: '#0f172a' }}>
+                              👤 {u.discord_name}
                             </span>
                           </div>
                         </div>
-                        <div style={{ fontSize: '18px', fontWeight: '900', color: '#16a34a' }}>
+                        <div style={{ fontSize: '15px', fontWeight: '900', color: '#16a34a' }}>
                           {(u.balance || 0).toLocaleString()} G
                         </div>
                       </div>
@@ -744,8 +741,8 @@ export default function IPATPage() {
 
             {mainTab === 'chat' && (
               <div>
-                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>💬 パドック予想 ＆ リアルタイム雑談掲示板</h3>
-                <form onSubmit={handleSendChat} style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '18px' }}>💬 パドック予想 ＆ 雑談掲示板</h3>
+                <form onSubmit={handleSendChat} style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
                   <input
                     type="text"
                     placeholder="予想やパドックの感想を投稿しよう！"
@@ -753,19 +750,19 @@ export default function IPATPage() {
                     onChange={(e) => setChatInput(e.target.value)}
                     style={{ ...inputStyle, flex: 1 }}
                   />
-                  <button type="submit" style={{ padding: '12px 24px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                  <button type="submit" style={{ padding: '10px 18px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                     投稿 💬
                   </button>
                 </form>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {chatMessages.map((m) => (
-                    <div key={m.id} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span style={{ fontWeight: 'bold', color: '#1e3a8a' }}>👤 {m.discord_name}</span>
-                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>{m.created_at || 'たった今'}</span>
+                    <div key={m.id} style={{ backgroundColor: '#f8fafc', padding: '12px 16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span style={{ fontWeight: 'bold', color: '#1e3a8a', fontSize: '13px' }}>👤 {m.discord_name}</span>
+                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>{m.created_at || 'たった今'}</span>
                       </div>
-                      <div style={{ fontSize: '14px', color: '#334155' }}>{m.content}</div>
+                      <div style={{ fontSize: '13px', color: '#334155' }}>{m.content}</div>
                     </div>
                   ))}
                 </div>
@@ -774,13 +771,13 @@ export default function IPATPage() {
 
             {mainTab === 'history' && (
               <div>
-                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>📋 あなたの馬券購入履歴・的中一覧</h3>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '18px' }}>📋 馬券購入履歴・的中一覧</h3>
                 {myBets.length === 0 ? (
-                  <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                  <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
                     まだ購入した馬券がありません。
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {myBets.map((b) => {
                       const isClaimed = b.is_claimed;
                       const payout = Number(b.payout_amount || 0);
@@ -792,7 +789,7 @@ export default function IPATPage() {
                           key={b.id}
                           style={{
                             backgroundColor: isWin ? '#fefce8' : '#f8fafc',
-                            padding: '16px 20px',
+                            padding: '14px 16px',
                             borderRadius: '12px',
                             border: `2px solid ${isWin ? '#eab308' : isLose ? '#cbd5e1' : '#bfdbfe'}`,
                             display: 'flex',
@@ -801,30 +798,30 @@ export default function IPATPage() {
                           }}
                         >
                           <div>
-                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#1e3a8a' }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#1e3a8a' }}>
                               🎫 【{b.bet_type}】 {b.selection}
                             </div>
-                            <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
                               購入額: {Number(b.amount).toLocaleString()} G
                             </div>
                           </div>
 
                           <div>
                             {!isClaimed ? (
-                              <span style={{ backgroundColor: '#2563eb', color: '#fff', padding: '6px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px' }}>
-                                ⏳ レース結果確定待ち
+                              <span style={{ backgroundColor: '#2563eb', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px' }}>
+                                ⏳ 確定待ち
                               </span>
                             ) : isWin ? (
                               <div style={{ textAlign: 'right' }}>
-                                <span style={{ backgroundColor: '#16a34a', color: '#fff', padding: '4px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px' }}>
+                                <span style={{ backgroundColor: '#16a34a', color: '#fff', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px' }}>
                                   🎯 的中！
                                 </span>
-                                <div style={{ fontSize: '18px', fontWeight: '900', color: '#16a34a', marginTop: '4px' }}>
+                                <div style={{ fontSize: '16px', fontWeight: '900', color: '#16a34a', marginTop: '2px' }}>
                                   + {payout.toLocaleString()} G
                                 </div>
                               </div>
                             ) : (
-                              <span style={{ backgroundColor: '#94a3b8', color: '#fff', padding: '6px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px' }}>
+                              <span style={{ backgroundColor: '#94a3b8', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px' }}>
                                 ❌ 不的中
                               </span>
                             )}
@@ -839,20 +836,20 @@ export default function IPATPage() {
 
             {mainTab === 'news' && (
               <div>
-                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a' }}>📢 運営からのアプデ・お知らせ一覧</h3>
+                <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', fontSize: '18px' }}>📢 アプデ・お知らせ一覧</h3>
                 {newsList.length === 0 ? (
-                  <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                  <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
                     現在お知らせはありません。
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {newsList.map((n) => (
-                      <div key={n.id} style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                          <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#1e3a8a' }}>📢 {n.title}</span>
-                          <span style={{ fontSize: '12px', color: '#64748b' }}>{n.date || '本日'}</span>
+                      <div key={n.id} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <span style={{ fontWeight: 'bold', fontSize: '16px', color: '#1e3a8a' }}>📢 {n.title}</span>
+                          <span style={{ fontSize: '11px', color: '#64748b' }}>{n.date || '本日'}</span>
                         </div>
-                        <div style={{ fontSize: '14px', color: '#334155', whiteSpace: 'pre-wrap', lineHeight: '1.6', marginTop: '8px' }}>
+                        <div style={{ fontSize: '13px', color: '#334155', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
                           {n.content}
                         </div>
                       </div>
@@ -874,11 +871,13 @@ function TabBtn({ active, onClick, text }: { active: boolean; onClick: () => voi
     <button
       onClick={onClick}
       style={{
-        padding: '10px 18px',
+        padding: '8px 14px',
         borderRadius: '8px',
         border: '1px solid #cbd5e1',
         fontWeight: 'bold',
+        fontSize: '13px',
         cursor: 'pointer',
+        whiteSpace: 'nowrap',
         backgroundColor: active ? '#1e3a8a' : '#fff',
         color: active ? '#fff' : '#475569',
       }}
@@ -888,5 +887,5 @@ function TabBtn({ active, onClick, text }: { active: boolean; onClick: () => voi
   );
 }
 
-const labelStyle = { display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '4px', fontWeight: 'bold' };
-const inputStyle = { padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '15px', width: '100%' };
+const labelStyle = { display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px', fontWeight: 'bold' };
+const inputStyle = { padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', width: '100%', backgroundColor: '#fff' };

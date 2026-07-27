@@ -15,12 +15,10 @@ export default function OwnerPage() {
   const [jockeyList, setJockeyList] = useState<any[]>([]);
   const [pedigreeList, setPedigreeList] = useState<any[]>([]);
 
-  // 🧬 スタホ配合用ステート
   const [selectedSire, setSelectedSire] = useState('');
   const [selectedDam, setSelectedDam] = useState('');
   const [foalNameInput, setFoalNameInput] = useState('');
 
-  // 🏆 出走＆騎手エントリー申請モーダル用ステート
   const [entryModalHorse, setEntryModalHorse] = useState<any>(null);
   const [targetRaceNo, setTargetRaceNo] = useState<number>(1);
   const [preferredJockey, setPreferredJockey] = useState<string>('');
@@ -115,7 +113,6 @@ export default function OwnerPage() {
     }
   };
 
-  // 🏆 レース出走＆希望騎手の申請を送信
   const handleSubmitRaceEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!entryModalHorse) return;
@@ -280,81 +277,77 @@ export default function OwnerPage() {
         style={{
           backgroundColor: '#16a34a',
           color: '#fff',
-          padding: '16px 32px',
+          padding: '12px 16px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          flexWrap: 'wrap',
+          gap: '8px'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <span style={{ backgroundColor: '#ffffff', color: '#16a34a', padding: '6px 16px', fontWeight: '900', borderRadius: '30px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ backgroundColor: '#ffffff', color: '#16a34a', padding: '4px 12px', fontWeight: '900', borderRadius: '20px', fontSize: '13px' }}>
             🍏 青森県競馬
           </span>
-          <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#dcfce7' }}>🐴 馬主ラウンジ</span>
+          <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#dcfce7' }}>🐴 馬主ラウンジ</span>
         </div>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          {currentUser ? (
-            <div style={{ backgroundColor: '#14532d', padding: '8px 20px', borderRadius: '25px', display: 'flex', gap: '16px', border: '1px solid #22c55e' }}>
-              <span>👤 {currentUser.discord_name} オーナー</span>
-              <span style={{ color: '#fef08a', fontWeight: 'bold' }}>{(currentUser.balance || 0).toLocaleString()} G (IPAT共通)</span>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {currentUser && (
+            <div style={{ backgroundColor: '#14532d', padding: '6px 12px', borderRadius: '20px', fontSize: '12px', color: '#fef08a', fontWeight: 'bold', border: '1px solid #22c55e' }}>
+              👤 {currentUser.discord_name} ({(currentUser.balance || 0).toLocaleString()}G)
             </div>
-          ) : (
-            <span style={{ color: '#dcfce7', fontSize: '14px' }}>未ログイン</span>
           )}
 
-          <Link href="/" style={{ backgroundColor: '#1e3a8a', color: '#fff', padding: '8px 16px', borderRadius: '8px', textDecoration: 'none', fontWeight: 'bold', fontSize: '14px' }}>
-            🎫 IPAT投票画面 ↗
-          </Link>
-          <Link href="/admin" style={{ backgroundColor: '#2563eb', color: '#fff', padding: '8px 16px', borderRadius: '8px', textDecoration: 'none', fontWeight: 'bold', fontSize: '14px' }}>
-            ⚙️ 運営管理 ↗
+          <Link href="/" style={{ backgroundColor: '#1e3a8a', color: '#fff', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold', fontSize: '12px' }}>
+            🎫 IPAT ↗
           </Link>
         </div>
       </header>
 
-      <div style={{ maxWidth: '1000px', margin: '30px auto', padding: '0 20px' }}>
+      <div style={{ maxWidth: '1000px', margin: '16px auto', padding: '0 12px' }}>
         {!currentUser ? (
           <div
             style={{
               backgroundColor: '#fff',
-              padding: '50px',
+              padding: '40px 20px',
               borderRadius: '20px',
               textAlign: 'center',
               maxWidth: '400px',
-              margin: '50px auto',
+              margin: '30px auto',
               boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)',
               border: '1px solid #e2e8f0',
             }}
           >
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🐴</div>
-            <h2 style={{ color: '#16a34a', margin: '0 0 10px 0' }}>馬主ラウンジ ログイン</h2>
-            <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '24px' }}>
+            <div style={{ fontSize: '40px', marginBottom: '12px' }}>🐴</div>
+            <h2 style={{ color: '#16a34a', margin: '0 0 10px 0', fontSize: '20px' }}>馬主 ログイン</h2>
+            <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '20px' }}>
               <input type="text" placeholder="ユーザー名 (Discord名)" value={discordInput} onChange={(e) => setDiscordInput(e.target.value)} style={inputStyle} />
               <input type="password" maxLength={4} value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="暗証番号 (4桁)" style={{ ...inputStyle, textAlign: 'center', letterSpacing: '6px' }} />
-              <button type="submit" style={{ padding: '16px', backgroundColor: '#16a34a', color: '#fff', borderRadius: '10px', fontWeight: 'bold', fontSize: '18px', border: 'none', cursor: 'pointer' }}>
-                馬主としてログイン / 登録
+              <button type="submit" style={{ padding: '14px', backgroundColor: '#16a34a', color: '#fff', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', border: 'none', cursor: 'pointer' }}>
+                ログイン / 登録
               </button>
             </form>
           </div>
         ) : (
-          <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0' }}>
             
-            <div style={{ display: 'flex', gap: '12px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px', overflowX: 'auto' }}>
-              <TabBtn active={activeTab === 'my_horses'} onClick={() => setActiveTab('my_horses')} text="📋 自分の所有馬一覧" />
-              <TabBtn active={activeTab === 'starhorse_breed'} onClick={() => setActiveTab('starhorse_breed')} text="🧬 スタホ風 本格配合生産" />
-              <TabBtn active={activeTab === 'pedigree'} onClick={() => setActiveTab('pedigree')} text={`🧬 伝説血統書 (${pedigreeList.length})`} />
-              <TabBtn active={activeTab === 'jockey'} onClick={() => setActiveTab('jockey')} text="🏇 騎手変更申請" />
+            <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px', marginBottom: '20px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <TabBtn active={activeTab === 'my_horses'} onClick={() => setActiveTab('my_horses')} text="📋 所有馬" />
+              <TabBtn active={activeTab === 'starhorse_breed'} onClick={() => setActiveTab('starhorse_breed')} text="🧬 スタホ配合" />
+              <TabBtn active={activeTab === 'pedigree'} onClick={() => setActiveTab('pedigree')} text={`🧬 血統書 (${pedigreeList.length})`} />
+              <TabBtn active={activeTab === 'jockey'} onClick={() => setActiveTab('jockey')} text="🏇 騎手変更" />
             </div>
 
             {activeTab === 'my_horses' && (
               <div>
-                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🐎 自分の所有馬一覧 ({myHorses.length}頭)</h3>
+                <h3 style={{ margin: '0 0 14px 0', color: '#16a34a', fontSize: '18px' }}>🐎 自分の所有馬一覧 ({myHorses.length}頭)</h3>
                 {myHorses.length === 0 ? (
-                  <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
-                    まだ所有馬がいません。「スタホ風 本格配合」で生産するか、管理者の割り当てをお待ちください。
+                  <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                    まだ所有馬がいません。「スタホ配合」で生産してみましょう！
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' }}>
                     {myHorses.map((h, i) => {
                       const isRetired = h.status === '引退';
                       const isPedigree = h.status === '種牡馬/繁殖牝馬';
@@ -363,41 +356,39 @@ export default function OwnerPage() {
                       const isAuction = h.status === 'セリ出品中';
 
                       return (
-                        <div key={h.id || i} style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#16a34a' }}>🐎 {h.name}</span>
-                            <span style={{ fontSize: '11px', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px', color: '#fff', backgroundColor: isAuction ? '#d97706' : isPedigree ? '#8b5cf6' : isRetired ? '#64748b' : isPendingRetire ? '#eab308' : isRunning ? '#dc2626' : '#16a34a' }}>
+                        <div key={h.id || i} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                            <span style={{ fontWeight: 'bold', fontSize: '16px', color: '#16a34a' }}>🐎 {h.name}</span>
+                            <span style={{ fontSize: '10px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', color: '#fff', backgroundColor: isAuction ? '#d97706' : isPedigree ? '#8b5cf6' : isRetired ? '#64748b' : isPendingRetire ? '#eab308' : isRunning ? '#dc2626' : '#16a34a' }}>
                               {h.status || '現役'}
                             </span>
                           </div>
 
-                          <div style={{ fontSize: '13px', marginTop: '10px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <div>馬主: <strong>{currentUser.discord_name}</strong></div>
+                          <div style={{ fontSize: '12px', marginTop: '6px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '3px' }}>
                             <div>血統: <strong>{h.sire_name || '自家'} × {h.dam_name || '自家'} ({h.generation || 1}代目)</strong></div>
-                            <div>総合素質: <strong style={{ color: '#dc2626' }}>【{h.rank || 'B'}ランク】</strong></div>
-                            <div>スピード: {h.speed || 'B'} / スタミナ: {h.stamina || 'B'} / 根性: {h.guts || 'B'}</div>
+                            <div>素質: <strong style={{ color: '#dc2626' }}>【{h.rank || 'B'}ランク】</strong></div>
+                            <div>速: {h.speed || 'B'} / 体: {h.stamina || 'B'} / 根: {h.guts || 'B'}</div>
                           </div>
 
                           {!isRetired && !isPendingRetire && !isPedigree && !isAuction && h.id && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
-                              
-                              {/* 🏆 出走＆騎手エントリーボタン */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
                               <button
                                 onClick={() => setEntryModalHorse(h)}
-                                style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                                style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
                               >
                                 🏆 レース出走 ＆ 騎手エントリー 🏇
                               </button>
 
                               <div style={{ display: 'flex', gap: '4px' }}>
-                                <button onClick={() => handleTrainHorse(h.id, h.name, '坂路')} style={{ flex: 1, backgroundColor: '#3b82f6', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>坂路(速)</button>
-                                <button onClick={() => handleTrainHorse(h.id, h.name, 'ウッド')} style={{ flex: 1, backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>ウッド(根)</button>
-                                <button onClick={() => handleTrainHorse(h.id, h.name, 'プール')} style={{ flex: 1, backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>プール(体)</button>
+                                <button onClick={() => handleTrainHorse(h.id, h.name, '坂路')} style={{ flex: 1, backgroundColor: '#3b82f6', color: '#fff', border: 'none', padding: '5px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>坂路(速)</button>
+                                <button onClick={() => handleTrainHorse(h.id, h.name, 'ウッド')} style={{ flex: 1, backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '5px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>ウッド(根)</button>
+                                <button onClick={() => handleTrainHorse(h.id, h.name, 'プール')} style={{ flex: 1, backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '5px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>プール(体)</button>
                               </div>
-                              <div style={{ display: 'flex', gap: '6px' }}>
-                                <button onClick={() => handleSellAtAuction(h.id, h.name)} style={{ flex: 1, backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>セリ出品 🔨</button>
-                                <button onClick={() => handleRegisterPedigree(h.id, h.name)} style={{ flex: 1, backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>種牡馬 🧬</button>
-                                <button onClick={() => handleRetireRequest(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>引退 🛑</button>
+
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button onClick={() => handleSellAtAuction(h.id, h.name)} style={{ flex: 1, backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '6px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>セリ出品 🔨</button>
+                                <button onClick={() => handleRegisterPedigree(h.id, h.name)} style={{ flex: 1, backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '6px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>種牡馬 🧬</button>
+                                <button onClick={() => handleRetireRequest(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>引退 🛑</button>
                               </div>
                             </div>
                           )}
@@ -410,41 +401,41 @@ export default function OwnerPage() {
             )}
 
             {activeTab === 'starhorse_breed' && (
-              <div style={{ maxWidth: '600px' }}>
-                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🧬 スタホ風 自家製本格配合（父×母）</h3>
-                <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
-                  殿堂入りした自分の所有種牡馬なら<strong>種付け料0G (無料)</strong>で種付けできます！
+              <div style={{ maxWidth: '500px' }}>
+                <h3 style={{ margin: '0 0 12px 0', color: '#16a34a', fontSize: '18px' }}>🧬 スタホ風 自家製本格配合</h3>
+                <p style={{ color: '#64748b', fontSize: '12px', marginBottom: '16px' }}>
+                  所有種牡馬なら<strong>種付け料0G (無料)</strong>で種付けできます！
                 </p>
-                <form onSubmit={handleStarhorseBreed} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <form onSubmit={handleStarhorseBreed} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <div>
-                    <label style={labelStyle}>① 父馬（種牡馬）を選択</label>
+                    <label style={labelStyle}>① 父馬（種牡馬）</label>
                     <select value={selectedSire} onChange={e => setSelectedSire(e.target.value)} style={inputStyle}>
                       {pedigreeList.map(p => (
                         <option key={p.id} value={p.name}>
-                          🧬 {p.name} (元所有: {p.owner_name} {p.owner_name === currentUser.discord_name ? '【自分・種付け料無料】' : '【他馬主・50万G】'})
+                          🧬 {p.name} ({p.owner_name === currentUser.discord_name ? '自分・無料' : '他・50万G'})
                         </option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label style={labelStyle}>② 母馬（繁殖牝馬）を選択</label>
+                    <label style={labelStyle}>② 母馬（繁殖牝馬）</label>
                     <select value={selectedDam} onChange={e => setSelectedDam(e.target.value)} style={inputStyle}>
                       {pedigreeList.map(p => (
                         <option key={p.id} value={p.name}>
-                          🧬 {p.name} (元所有: {p.owner_name})
+                          🧬 {p.name} ({p.owner_name})
                         </option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label style={labelStyle}>③ 誕生する仔馬の名前</label>
+                    <label style={labelStyle}>③ 仔馬の名前</label>
                     <input type="text" placeholder="例: カマクラキング" value={foalNameInput} onChange={e => setFoalNameInput(e.target.value)} style={inputStyle} required />
                   </div>
 
-                  <button type="submit" style={{ padding: '16px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-                    この配合で最強仔馬を生産する 🧬
+                  <button type="submit" style={{ padding: '14px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+                    この配合で生産する 🧬
                   </button>
                 </form>
               </div>
@@ -452,18 +443,17 @@ export default function OwnerPage() {
 
             {activeTab === 'pedigree' && (
               <div>
-                <h3 style={{ margin: '0 0 16px 0', color: '#8b5cf6' }}>🧬 殿堂入り 伝説の種牡馬・繁殖牝馬ライブラリ</h3>
+                <h3 style={{ margin: '0 0 16px 0', color: '#8b5cf6', fontSize: '18px' }}>🧬 殿堂入り血統書ライブラリ</h3>
                 {pedigreeList.length === 0 ? (
-                  <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
-                    まだ登録された種牡馬・繁殖牝馬がいません。愛馬を種牡馬登録してみましょう！
+                  <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                    まだ登録された種牡馬がいません。
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '12px' }}>
                     {pedigreeList.map((p) => (
-                      <div key={p.id} style={{ backgroundColor: '#faf5ff', padding: '18px', borderRadius: '12px', border: '2px solid #c084fc' }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#7e22ce', marginBottom: '6px' }}>🧬 {p.name}</div>
-                        <div style={{ fontSize: '13px', color: '#6b21a8' }}>元馬主: {p.owner_name}</div>
-                        <div style={{ fontSize: '12px', color: '#a855f7', marginTop: '4px', fontWeight: 'bold' }}>⭐ 伝説の継承血統</div>
+                      <div key={p.id} style={{ backgroundColor: '#faf5ff', padding: '14px', borderRadius: '12px', border: '2px solid #c084fc' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#7e22ce' }}>🧬 {p.name}</div>
+                        <div style={{ fontSize: '12px', color: '#6b21a8', marginTop: '4px' }}>元馬主: {p.owner_name}</div>
                       </div>
                     ))}
                   </div>
@@ -473,11 +463,11 @@ export default function OwnerPage() {
 
             {activeTab === 'jockey' && (
               <div style={{ maxWidth: '500px' }}>
-                <h3 style={{ margin: '0 0 20px 0', color: '#16a34a', fontWeight: 'bold', fontSize: '18px' }}>
-                  🏇 主戦騎手の指定・変更申請
+                <h3 style={{ margin: '0 0 16px 0', color: '#16a34a', fontWeight: 'bold', fontSize: '18px' }}>
+                  🏇 主戦騎手の変更申請
                 </h3>
 
-                <form onSubmit={handleUpdateJockey} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <form onSubmit={handleUpdateJockey} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <div>
                     <label style={labelStyle}>愛馬を選択</label>
                     <select value={selectedHorseName} onChange={(e) => setSelectedHorseName(e.target.value)} style={inputStyle}>
@@ -503,17 +493,17 @@ export default function OwnerPage() {
                   <button
                     type="submit"
                     style={{
-                      padding: '16px',
+                      padding: '14px',
                       backgroundColor: '#2563eb',
                       color: '#fff',
                       border: 'none',
                       borderRadius: '10px',
                       fontWeight: 'bold',
-                      fontSize: '16px',
+                      fontSize: '15px',
                       cursor: 'pointer',
                     }}
                   >
-                    騎手変更申請を運営へ送信 📨
+                    変更申請を送信 📨
                   </button>
                 </form>
               </div>
@@ -525,14 +515,14 @@ export default function OwnerPage() {
 
       {/* 🏆 出走＆騎手エントリーモーダル */}
       {entryModalHorse && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
-          <div style={{ backgroundColor: '#fff', padding: '32px', borderRadius: '16px', maxWidth: '450px', width: '90%', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-            <h3 style={{ margin: '0 0 16px 0', color: '#16a34a', fontSize: '20px', fontWeight: 'bold' }}>
-              🏆 「{entryModalHorse.name}」 出走 ＆ 騎手エントリー
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100, padding: '16px' }}>
+          <div style={{ backgroundColor: '#fff', padding: '24px 16px', borderRadius: '16px', maxWidth: '400px', width: '100%', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 14px 0', color: '#16a34a', fontSize: '18px', fontWeight: 'bold' }}>
+              🏆 「{entryModalHorse.name}」 出走エントリー
             </h3>
-            <form onSubmit={handleSubmitRaceEntry} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form onSubmit={handleSubmitRaceEntry} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={labelStyle}>① 出走希望レースを選択 (1〜12R)</label>
+                <label style={labelStyle}>出走希望レース (1〜12R)</label>
                 <select value={targetRaceNo} onChange={e => setTargetRaceNo(Number(e.target.value))} style={inputStyle}>
                   {Array.from({ length: 12 }, (_, i) => i + 1).map(no => (
                     <option key={no} value={no}>【{no}R】に出走希望</option>
@@ -541,7 +531,7 @@ export default function OwnerPage() {
               </div>
 
               <div>
-                <label style={labelStyle}>② 希望する騎手 (主戦騎手)</label>
+                <label style={labelStyle}>希望する騎手 (主戦)</label>
                 <select value={preferredJockey} onChange={e => setPreferredJockey(e.target.value)} style={inputStyle}>
                   {jockeyList.map(j => (
                     <option key={j.id} value={j.name}>🏇 {j.name}</option>
@@ -549,12 +539,12 @@ export default function OwnerPage() {
                 </select>
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
-                <button type="button" onClick={() => setEntryModalHorse(null)} style={{ flex: 1, padding: '12px', backgroundColor: '#94a3b8', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                <button type="button" onClick={() => setEntryModalHorse(null)} style={{ flex: 1, padding: '12px', backgroundColor: '#94a3b8', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
                   キャンセル
                 </button>
-                <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
-                  出走申請を送信 📨
+                <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
+                  送信 📨
                 </button>
               </div>
             </form>
@@ -570,12 +560,13 @@ function TabBtn({ active, onClick, text }: { active: boolean; onClick: () => voi
     <button
       onClick={onClick}
       style={{
-        padding: '12px 22px',
-        borderRadius: '10px',
-        border: active ? 'none' : '1px solid #cbd5e1',
+        padding: '8px 14px',
+        borderRadius: '8px',
+        border: '1px solid #cbd5e1',
         fontWeight: 'bold',
-        fontSize: '15px',
+        fontSize: '13px',
         cursor: 'pointer',
+        whiteSpace: 'nowrap',
         backgroundColor: active ? '#16a34a' : '#ffffff',
         color: active ? '#ffffff' : '#475569',
       }}
@@ -585,5 +576,5 @@ function TabBtn({ active, onClick, text }: { active: boolean; onClick: () => voi
   );
 }
 
-const labelStyle = { display: 'block', fontSize: '13px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' };
-const inputStyle = { padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '16px', width: '100%', backgroundColor: '#fff' };
+const labelStyle = { display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px', fontWeight: 'bold' };
+const inputStyle = { padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', width: '100%', backgroundColor: '#fff' };
