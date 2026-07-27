@@ -69,6 +69,8 @@ export default function SuperAdminConsole() {
   const [editWeather, setEditWeather] = useState('晴');
   const [editPrize, setEditPrize] = useState(1000000);
   const [editGrade, setEditGrade] = useState('一般');
+  // 🕒 発走予定時刻（自動締め切り用）
+  const [editStartTime, setEditStartTime] = useState('15:30');
 
   const [newHorseNumber, setNewHorseNumber] = useState(1);
   const [newHorseName, setNewHorseName] = useState(''); 
@@ -138,6 +140,30 @@ export default function SuperAdminConsole() {
     } 
   }, [isAuthenticated]);
 
+  // 🕒 毎10秒ごとに発走時刻を監視して自動で閉鎖（自動締め切りタイマー）
+  useEffect(() => {
+    if (!isAuthenticated || races.length === 0) return;
+
+    const interval = setInterval(() => {
+      const now = new Date();
+      const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+      races.forEach(async (r) => {
+        if (r.status === 'open' && r.start_time && currentHHMM >= r.start_time) {
+          await supabase.from('races').update({ status: 'closed' }).eq('id', r.id);
+          sendDiscordNotification(
+            `🔒 【${r.race_number}R】 投票自動締め切り`,
+            `発走予定時刻（${r.start_time}）に達したため、【${r.race_number}R ${r.title || ''}】の投票受付を自動締め切りました！`,
+            0xdc2626
+          );
+          fetchRaces();
+        }
+      });
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [races, isAuthenticated]);
+
   useEffect(() => {
     if (races.length > 0) {
       const race = races.find(r => r.race_number === selectedRaceNo);
@@ -149,6 +175,7 @@ export default function SuperAdminConsole() {
         setEditWeather(race.weather || '晴');
         setEditPrize(race.prize || 1000000);
         setEditGrade(race.grade || '一般');
+        setEditStartTime(race.start_time || '15:30');
         fetchHorses(race.id);
       } else {
         setEditTitle('');
@@ -157,6 +184,7 @@ export default function SuperAdminConsole() {
         setEditWeather('晴');
         setEditPrize(1000000);
         setEditGrade('一般');
+        setEditStartTime('15:30');
       }
     }
   }, [selectedRaceNo, races]);
@@ -436,7 +464,7 @@ export default function SuperAdminConsole() {
     fetchAuctions(); fetchHorseMasters();
   };
 
-  // 🤖 🤖 🤖 【新機能】 AI自動オッズ計算・一括設定処理 🤖 🤖 🤖
+  // 🤖 AI自動オッズ計算・一括設定処理
   const handleAutoCalculateOdds = async () => {
     if (!horses || horses.length === 0) return alert('出走馬が登録されていません');
     if (!confirm(`【${selectedRaceNo}R】の全出走馬（${horses.length}頭）の単勝オッズをAI自動計算して一括更新しますか？`)) return;
@@ -454,7 +482,6 @@ export default function SuperAdminConsole() {
         score += rankMap[masterObj.speed] || 10;
       }
 
-      // ランダム要素を加味して自然なオッズ倍率を作成
       const randFactor = (Math.random() * 0.4) + 0.8; 
       let calculatedOdds = Number(( (baseOdds[i] || (i + 1) * 5) * randFactor ).toFixed(1));
       calculatedOdds = Math.max(1.3, calculatedOdds);
@@ -585,6 +612,7 @@ export default function SuperAdminConsole() {
       weather: editWeather,
       prize: editPrize,
       grade: editGrade,
+      start_time: editStartTime,
       status: currentRace?.status || 'open',
     };
 
@@ -594,7 +622,7 @@ export default function SuperAdminConsole() {
       await supabase.from('races').insert([racePayload]);
     }
 
-    alert(`🎉 【${selectedRaceNo}R】 のレース名を「${editTitle}」へ変更・保存しました！`);
+    alert(`🎉 【${selectedRaceNo}R】 の条件（発走時刻: ${editStartTime}）を保存しました！`);
     fetchRaces();
   };
 
@@ -893,10 +921,8 @@ export default function SuperAdminConsole() {
       : true
   );
 
-  // ⚠️ 異常賭け金（インサイダー）検知
   const suspiciousBets = allBets.filter(b => Number(b.amount || 0) >= 10000000);
 
-  // 📊 券種別売上アナリティクス計算
   const betTypeStats = ['単勝', '複勝', '馬単', '馬連', 'ワイド', '3連複', '3連単'].map(type => {
     const total = allBets.filter(b => b.bet_type === type).reduce((sum, b) => sum + Number(b.amount || 0), 0);
     return { type, total };
@@ -920,13 +946,13 @@ export default function SuperAdminConsole() {
         {/* ナビゲーションタブ */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px' }}>
           <NavChip active={adminTab === 'users'} onClick={() => setAdminTab('users')} text="👥 プレイヤー・IP照合" />
+          <NavChip active={adminTab === 'race'} onClick={() => setAdminTab('race')} text="⚡ 12R一括/時刻設定/返金" />
           <NavChip active={adminTab === 'horses'} onClick={() => setAdminTab('horses')} text="🗞️ 出走馬/AIオッズ/新聞" />
           <NavChip active={adminTab === 'anomaly_detect'} onClick={() => setAdminTab('anomaly_detect')} text={`⚠️ 異常検知 (${suspiciousBets.length})`} />
           <NavChip active={adminTab === 'analytics'} onClick={() => setAdminTab('analytics')} text="📊 売上アナリティクス" />
           <NavChip active={adminTab === 'live_stream'} onClick={() => setAdminTab('live_stream')} text="🎥 生配信枠設定" />
           <NavChip active={adminTab === 'maintenance'} onClick={() => setAdminTab('maintenance')} text="🛑 メンテナンス切替" />
           <NavChip active={adminTab === 'mvp_reward'} onClick={() => setAdminTab('mvp_reward')} text="🏆 今節MVP表彰" />
-          <NavChip active={adminTab === 'race'} onClick={() => setAdminTab('race')} text="⚡ 12R一括/返金" />
           <NavChip active={adminTab === 'settle'} onClick={() => setAdminTab('settle')} text="🏁 着順確定/消去" />
           <NavChip active={adminTab === 'race_requests_admin'} onClick={() => setAdminTab('race_requests_admin')} text={`📨 出走申請 (${raceRequests.length})`} />
           <NavChip active={adminTab === 'auction_admin'} onClick={() => setAdminTab('auction_admin')} text={`🔨 セリ管理 (${auctions.length})`} />
@@ -1043,69 +1069,175 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 🐴 TAB: 出走馬追加 ＆ 🤖 AI自動オッズ設定 */}
-          {adminTab === 'horses' && (
+          {/* ⚡ 12R一括コントロール ＆ 🕒 発走予定時刻設定 ＆ 💸 全額返金 */}
+          {adminTab === 'race' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '2px solid #2563eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h3 style={{ margin: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>🤖 【{selectedRaceNo}R】 予想印 ＆ AI自動オッズ管理</h3>
-                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>出走馬の能力・素質に基いた単勝オッズをAIが自動計算します</div>
-                </div>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button onClick={handleAutoCalculateOdds} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
-                    🤖 AI自動オッズ計算
+              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '2px solid #2563eb' }}>
+                <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>⚡ 1R〜12R 一括状態コントロール</h3>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button onClick={() => handleBulkSetRaceStatus('open')} style={{ flex: 1, backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    🟢 全12R 受付開始
                   </button>
-                  <button onClick={handleAutoAssignMarks} style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
-                    🗞️ AI予想印設定
+                  <button onClick={() => handleBulkSetRaceStatus('closed')} style={{ flex: 1, backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    🔒 全12R 投票締切
+                  </button>
+                  <button onClick={handleResetAllRaces} style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    🧹 開催クリア
                   </button>
                 </div>
               </div>
 
               <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ marginTop: 0, color: '#16a34a', fontWeight: 'bold', fontSize: '16px' }}>➕ 【{selectedRaceNo}R】 出走馬追加</h3>
-                <form onSubmit={handleAddHorse} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr', gap: '8px' }}>
-                    <div><label style={labelStyle}>馬番</label><input type="number" value={newHorseNumber} onChange={e=>setNewHorseNumber(Number(e.target.value))} style={inputStyle} /></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h3 style={{ margin: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '18px' }}>🛠️ 【{selectedRaceNo}R】 レース名・自動締切時間設定</h3>
+                  <button onClick={handleRefundRaceBets} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                    💸 【{selectedRaceNo}R】全額自動返金
+                  </button>
+                </div>
+
+                <form onSubmit={handleUpdateRaceInfo} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <label style={labelStyle}>レース名</label>
+                    <input type="text" placeholder="例: 青森県ダービー" value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#1e3a8a' }} required />
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                     <div>
-                      <label style={labelStyle}>馬名</label>
-                      <select value={newHorseName} onChange={e=>setNewHorseName(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }}>
-                        {activeHorseMasters.map(h => <option key={h.id} value={h.name}>🐎 {h.name}</option>)}
+                      <label style={labelStyle}>🏆 レース格付け</label>
+                      <select value={editGrade} onChange={e=>setEditGrade(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: editGrade === 'G1' ? '#dc2626' : editGrade === 'G2' ? '#d97706' : '#2563eb' }}>
+                        <option value="一般">一般競走</option>
+                        <option value="G3">G3 重賞</option>
+                        <option value="G2">G2 重賞</option>
+                        <option value="G1">G1 最高峰競走</option>
                       </select>
                     </div>
-                    <div><label style={labelStyle}>騎手</label><select value={newJockey} onChange={e=>setNewJockey(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#2563eb' }}>{jockeyList.map(j => <option key={j.id} value={j.name}>🏇 {j.name}</option>)}</select></div>
+
+                    {/* 🕒 自動締め切り発走時刻入力フォーム */}
+                    <div>
+                      <label style={labelStyle}>🕒 発走・自動締切時刻 (例: 15:30)</label>
+                      <input
+                        type="time"
+                        value={editStartTime}
+                        onChange={e => setEditStartTime(e.target.value)}
+                        style={{ ...inputStyle, fontWeight: 'bold', color: '#dc2626' }}
+                      />
+                    </div>
                   </div>
-                  <button type="submit" style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>出走確定 ➕</button>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                    <div><label style={labelStyle}>距離 (m)</label><input type="number" step="100" value={editDistance} onChange={e=>setEditDistance(Number(e.target.value))} style={inputStyle} /></div>
+                    <div><label style={labelStyle}>馬場</label><select value={editCondition} onChange={e=>setEditCondition(e.target.value)} style={inputStyle}><option value="良">良</option><option value="稍重">稍重</option><option value="重">重</option><option value="不良">不良</option></select></div>
+                    <div><label style={labelStyle}>天候</label><select value={editWeather} onChange={e=>setEditWeather(e.target.value)} style={inputStyle}><option value="晴">晴</option><option value="曇">曇</option><option value="雨">雨</option><option value="雪">雪</option></select></div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>💰 1着総賞金 (G)</label>
+                    <input type="number" step="100000" value={editPrize} onChange={e=>setEditPrize(Number(e.target.value))} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }} />
+                  </div>
+                  <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+                    設定を保存 💾 （時刻になると自動締め切り）
+                  </button>
                 </form>
               </div>
+            </div>
+          )}
 
-              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>📋 出走馬 ＆ オッズ一覧</h3>
-                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '450px' }}>
-                    <thead><tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}><th style={{ padding: '8px' }}>番</th><th>印</th><th>馬名</th><th>騎手</th><th>単勝オッズ</th><th>操作</th></tr></thead>
+          {/* 👥 TAB: プレイヤー管理 */}
+          {adminTab === 'users' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ backgroundColor: '#fefce8', border: '2px solid #eab308', borderRadius: '16px', padding: '16px' }}>
+                <h3 style={{ margin: '0 0 8px 0', color: '#ca8a04', fontSize: '15px', fontWeight: 'bold' }}>
+                  🎁 全プレイヤー一括コインプレゼント
+                </h3>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input type="number" step="100000" value={bulkGiftAmount} onChange={(e) => setBulkImportGiftAmount(Number(e.target.value))} style={{ ...inputStyle, width: '160px', fontWeight: 'bold' }} />
+                  <button onClick={handleDistributeBulkCoins} style={{ padding: '10px 16px', backgroundColor: '#eab308', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>全員に配る 🎁</button>
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: '#ffffff', border: '2px solid #2563eb', borderRadius: '16px', padding: '20px' }}>
+                <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>👤 プレイヤー個別管理 ＆ 称号・PIN</h2>
+                <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '2px solid #2563eb', fontSize: '15px', fontWeight: 'bold', backgroundColor: '#eff6ff', width: '100%' }}>
+                  {users.map(u => <option key={u.id} value={u.id}>👤 {u.discord_name} (PIN: {u.pin_code || '未設定'} / 残高: {(u.balance || 0).toLocaleString()}G)</option>)}
+                </select>
+
+                {selectedUser && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: '13px', color: '#1e3a8a', fontWeight: 'bold' }}>🔑 PIN: <span style={{ color: '#dc2626' }}>{selectedUser.pin_code || '未設定'}</span></div>
+                      <button onClick={handleResetPinCode} style={{ padding: '6px 12px', backgroundColor: '#64748b', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>🔑 0000に初期化</button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input type="number" step="100000" value={amountToAddInput} onChange={e => setAmountToAddInput(Number(e.target.value))} style={{ ...inputStyle, width: '140px' }} />
+                      <button onClick={() => handleAddUserBalance(amountToAddInput)} style={{ padding: '10px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>➕ 加算</button>
+                      <button onClick={() => handleAddUserBalance(-amountToAddInput)} style={{ padding: '10px', backgroundColor: '#ca8a04', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>➖ 減算</button>
+                    </div>
+                    <button onClick={() => handleDeleteUser()} style={{ padding: '10px', backgroundColor: '#dc2626', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🗑️ ユーザー削除</button>
+                  </div>
+                )}
+              </div>
+
+              {/* 🌐 登録ユーザーIPアドレス一覧＆重複検知テーブル */}
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
+                  🌐 ユーザー登録IPアドレス管理（複アカ照合・重複検知）
+                </h3>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <input
+                    type="text"
+                    placeholder="🔍 ユーザー名 または IPアドレスで検索..."
+                    value={ipSearchQuery}
+                    onChange={(e) => setIpSearchQuery(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+
+                <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '500px' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: '#1e3a8a', color: '#fff', textAlign: 'left' }}>
+                        <th style={{ padding: '8px 10px' }}>ユーザー名</th>
+                        <th style={{ padding: '8px 10px' }}>PIN</th>
+                        <th style={{ padding: '8px 10px' }}>所持コイン</th>
+                        <th style={{ padding: '8px 10px' }}>登録IPアドレス</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'center' }}>操作</th>
+                      </tr>
+                    </thead>
                     <tbody>
-                      {horses.map(h => (
-                        <tr key={h.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontWeight: 'bold' }}>{h.horse_number}</td>
-                          <td>
-                            <select value={h.mark || '・'} onChange={e => handleUpdateHorseDetail(h.id, 'mark', e.target.value)} style={{ padding: '2px', fontWeight: 'bold', color: '#dc2626' }}>
-                              {['◎', '○', '▲', '△', '×', '・'].map(m => <option key={m} value={m}>{m}</option>)}
-                            </select>
-                          </td>
-                          <td style={{ fontWeight: 'bold', color: '#16a34a' }}>🐎 {h.name}</td>
-                          <td style={{ color: '#2563eb', fontWeight: 'bold' }}>🏇 {h.jockey}</td>
-                          <td>
-                            <input
-                              type="number"
-                              step="0.1"
-                              value={h.manual_odds || 5.0}
-                              onChange={e => handleUpdateHorseDetail(h.id, 'manual_odds', Number(e.target.value))}
-                              style={{ width: '60px', padding: '4px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: 'bold', color: '#dc2626' }}
-                            /> 倍
-                          </td>
-                          <td><button onClick={()=>handleDeleteHorse(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>削除</button></td>
-                        </tr>
-                      ))}
+                      {filteredUsers.map((u) => {
+                        const sameIpCount = users.filter((other) => other.ip_address && other.ip_address === u.ip_address).length;
+                        const isMultiAccount = sameIpCount > 1;
+
+                        return (
+                          <tr key={u.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: isMultiAccount ? '#fef2f2' : '#ffffff' }}>
+                            <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#0f172a' }}>
+                              👤 {u.discord_name}
+                              {isMultiAccount && (
+                                <span style={{ backgroundColor: '#ef4444', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px', fontWeight: 'bold' }}>
+                                  ⚠️ IP重複 ({sameIpCount}件)
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                              {u.pin_code || '未設定'}
+                            </td>
+                            <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#16a34a' }}>
+                              {(u.balance || 0).toLocaleString()} G
+                            </td>
+                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: u.ip_address ? '#1e40af' : '#94a3b8' }}>
+                              🌐 {u.ip_address || '未記録 (旧アカウント)'}
+                            </td>
+                            <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                              <button
+                                onClick={() => handleDeleteUser(u.id, u.discord_name)}
+                                style={{ backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '10px' }}
+                              >
+                                🗑️ 消去
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1113,52 +1245,36 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* 📨 TAB: 出走申請リスト */}
-          {adminTab === 'race_requests_admin' && (
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '2px solid #2563eb' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h2 style={{ margin: 0, color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
-                  📨 出走 ＆ 騎手 申請リスト ({raceRequests.length}件)
-                </h2>
-                <button onClick={fetchRaceRequests} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
-                  🔄 更新
-                </button>
+          {/* 🐴 TAB: 出走馬追加 ＆ AI自動オッズ */}
+          {adminTab === 'horses' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '2px solid #2563eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ margin: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>🤖 【{selectedRaceNo}R】 AI自動オッズ ＆ 印</h3>
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button onClick={handleAutoCalculateOdds} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🤖 AI自動オッズ</button>
+                  <button onClick={handleAutoAssignMarks} style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🗞️ AI予想印</button>
+                </div>
               </div>
 
-              {raceRequests.length === 0 ? (
-                <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
-                  現在未処理の出走申請はありません。
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {raceRequests.map(req => (
-                    <div key={req.id} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ backgroundColor: '#1e3a8a', color: '#fff', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px' }}>
-                            【{req.target_race_no}R】
-                          </span>
-                          <span style={{ fontWeight: 'bold', fontSize: '16px', color: '#16a34a' }}>🐎 {req.horse_name}</span>
-                        </div>
-                        <span style={{ fontSize: '12px', color: '#475569' }}>馬主: {req.owner_name}</span>
-                      </div>
-
-                      <div style={{ fontSize: '13px', color: '#2563eb', fontWeight: 'bold' }}>
-                        希望騎手: 🏇 {req.preferred_jockey}
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={() => handleApproveRaceRequest(req)} style={{ flex: 1, padding: '10px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
-                          承認・自動登録 🟢
-                        </button>
-                        <button onClick={() => handleRejectRaceRequest(req)} style={{ padding: '10px 14px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
-                          拒否 🔴
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead><tr style={{ backgroundColor: '#f8fafc', textAlign: 'left' }}><th style={{ padding: '8px' }}>番</th><th>印</th><th>馬名</th><th>騎手</th><th>単勝オッズ</th><th>操作</th></tr></thead>
+                  <tbody>
+                    {horses.map(h => (
+                      <tr key={h.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px', fontWeight: 'bold' }}>{h.horse_number}</td>
+                        <td>{h.mark || '・'}</td>
+                        <td style={{ fontWeight: 'bold', color: '#16a34a' }}>🐎 {h.name}</td>
+                        <td style={{ color: '#2563eb', fontWeight: 'bold' }}>🏇 {h.jockey}</td>
+                        <td style={{ fontWeight: 'bold', color: '#dc2626' }}>{h.manual_odds || 5.0}倍</td>
+                        <td><button onClick={()=>handleDeleteHorse(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>削除</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -1278,306 +1394,6 @@ export default function SuperAdminConsole() {
                   </table>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* ⚡ 12R一括コントロール ＆ 開催リセット ＆ 💸 全額返金 */}
-          {adminTab === 'race' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '2px solid #2563eb' }}>
-                <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>⚡ 1R〜12R 一括状態コントロール</h3>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button onClick={() => handleBulkSetRaceStatus('open')} style={{ flex: 1, backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                    🟢 全12R 受付開始
-                  </button>
-                  <button onClick={() => handleBulkSetRaceStatus('closed')} style={{ flex: 1, backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                    🔒 全12R 投票締切
-                  </button>
-                  <button onClick={handleResetAllRaces} style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                    🧹 開催クリア
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <h3 style={{ margin: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '18px' }}>🛠️ 【{selectedRaceNo}R】 レース名・条件設定</h3>
-                  <button onClick={handleRefundRaceBets} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
-                    💸 【{selectedRaceNo}R】全額自動返金
-                  </button>
-                </div>
-
-                <form onSubmit={handleUpdateRaceInfo} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div>
-                    <label style={labelStyle}>レース名</label>
-                    <input type="text" placeholder="例: 青森県ダービー" value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#1e3a8a' }} required />
-                  </div>
-                  
-                  <div>
-                    <label style={labelStyle}>🏆 レース格付け</label>
-                    <select value={editGrade} onChange={e=>setEditGrade(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: editGrade === 'G1' ? '#dc2626' : editGrade === 'G2' ? '#d97706' : '#2563eb' }}>
-                      <option value="一般">一般競走</option>
-                      <option value="G3">G3 重賞</option>
-                      <option value="G2">G2 重賞</option>
-                      <option value="G1">G1 最高峰競走</option>
-                    </select>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                    <div><label style={labelStyle}>距離 (m)</label><input type="number" step="100" value={editDistance} onChange={e=>setEditDistance(Number(e.target.value))} style={inputStyle} /></div>
-                    <div><label style={labelStyle}>馬場</label><select value={editCondition} onChange={e=>setEditCondition(e.target.value)} style={inputStyle}><option value="良">良</option><option value="稍重">稍重</option><option value="重">重</option><option value="不良">不良</option></select></div>
-                    <div><label style={labelStyle}>天候</label><select value={editWeather} onChange={e=>setEditWeather(e.target.value)} style={inputStyle}><option value="晴">晴</option><option value="曇">曇</option><option value="雨">雨</option><option value="雪">雪</option></select></div>
-                  </div>
-                  <div>
-                    <label style={labelStyle}>💰 1着総賞金 (G)</label>
-                    <input type="number" step="100000" value={editPrize} onChange={e=>setEditPrize(Number(e.target.value))} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }} />
-                  </div>
-                  <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
-                    設定を保存 💾
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* 📊 リアルタイム総プール監視 */}
-          {adminTab === 'pool_monitor' && (
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h2 style={{ margin: 0, color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>📊 総プール＆偏り監視</h2>
-                <button onClick={fetchAllBets} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🔄 更新</button>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {Array.from({ length: 12 }, (_, i) => i + 1).map(no => {
-                  const r = races.find(race => race.race_number === no);
-                  const raceBets = allBets.filter(b => String(b.race_id) === String(r?.id));
-                  const totalG = raceBets.reduce((sum, b) => sum + Number(b.amount || 0), 0);
-
-                  return (
-                    <div key={no} style={{ backgroundColor: '#f8fafc', padding: '12px 16px', borderRadius: '10px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#1e3a8a' }}>【{no}R】{r?.title || '未設定'}</span>
-                        <div style={{ fontSize: '11px', color: '#64748b' }}>件数: {raceBets.length}件</div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <strong style={{ fontSize: '16px', color: '#16a34a', fontWeight: '900' }}>{totalG.toLocaleString()} G</strong>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* 📝 出走馬テキスト一括登録 */}
-          {adminTab === 'bulk_import' && (
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
-              <h2 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>
-                📝 出走馬テキスト爆速一括登録
-              </h2>
-              <p style={{ color: '#64748b', fontSize: '12px', marginBottom: '12px' }}>
-                `馬番, 馬名, 騎手, 年齢` で貼り付けて一括登録！
-              </p>
-
-              <div style={{ marginBottom: '12px' }}>
-                <label style={labelStyle}>対象レース</label>
-                <select value={selectedRaceNo} onChange={e => setSelectedRaceNo(Number(e.target.value))} style={inputStyle}>
-                  {Array.from({ length: 12 }, (_, i) => i + 1).map(no => (
-                    <option key={no} value={no}>{no}R ({races.find(r=>r.race_number===no)?.title || '未設定'})</option>
-                  ))}
-                </select>
-              </div>
-
-              <textarea
-                rows={6}
-                placeholder="1, カマクラドリーム, 武豊, 3&#10;2, ツガルキング, ルメール, 4"
-                value={bulkImportText}
-                onChange={e => setBulkImportText(e.target.value)}
-                style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '13px', resize: 'vertical', marginBottom: '12px' }}
-              />
-
-              <button onClick={handleBulkImportHorses} style={{ width: '100%', padding: '14px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
-                【{selectedRaceNo}R】に一括登録 📝
-              </button>
-            </div>
-          )}
-
-          {/* 👤 TAB: プレイヤー管理 ＋ 称号 ＋ 🔑 PIN ＋ 🎁 配布 ＋ 🌐 IP照合 */}
-          {adminTab === 'users' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              
-              {/* 🎁 全プレイヤー一括コイン配布セクション */}
-              <div style={{ backgroundColor: '#fefce8', border: '2px solid #eab308', borderRadius: '16px', padding: '16px' }}>
-                <h3 style={{ margin: '0 0 8px 0', color: '#ca8a04', fontSize: '15px', fontWeight: 'bold' }}>
-                  🎁 全プレイヤー一括コインプレゼント（イベント・お詫び用）
-                </h3>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input
-                    type="number"
-                    step="100000"
-                    value={bulkGiftAmount}
-                    onChange={(e) => setBulkImportGiftAmount(Number(e.target.value))}
-                    style={{ ...inputStyle, width: '160px', fontWeight: 'bold' }}
-                  />
-                  <button
-                    onClick={handleDistributeBulkCoins}
-                    style={{ padding: '10px 16px', backgroundColor: '#eab308', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}
-                  >
-                    全員に配る 🎁
-                  </button>
-                </div>
-              </div>
-
-              {/* 👑 ユーザー個別の編集・操作セクション */}
-              <div style={{ backgroundColor: '#ffffff', border: '2px solid #2563eb', borderRadius: '16px', padding: '20px' }}>
-                <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>👤 プレイヤー個別管理 ＆ 称号・PIN</h2>
-                
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={labelStyle}>操作するプレイヤーを選択</label>
-                  <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '2px solid #2563eb', fontSize: '15px', fontWeight: 'bold', backgroundColor: '#eff6ff', width: '100%' }}>
-                    {users.map(u => (
-                      <option key={u.id} value={u.id}>
-                        👤 {u.discord_name} (PIN: {u.pin_code || '未設定'} / 残高: {(u.balance || 0).toLocaleString()}G)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {selectedUser && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
-                    
-                    {/* 🔑 PINコード管理 */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: '13px', color: '#1e3a8a', fontWeight: 'bold' }}>
-                        🔑 現在の暗証番号 (PIN): <span style={{ color: '#dc2626', letterSpacing: '2px', fontSize: '15px' }}>{selectedUser.pin_code || '未設定'}</span>
-                      </div>
-                      <button onClick={handleResetPinCode} style={{ padding: '6px 12px', backgroundColor: '#64748b', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>
-                        🔑 0000に初期化
-                      </button>
-                    </div>
-
-                    <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: 0 }} />
-
-                    <div>
-                      <h4 style={{ margin: '0 0 8px 0', color: '#16a34a', fontSize: '14px' }}>💰 コイン加算・引き落とし</h4>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <input type="number" step="100000" value={amountToAddInput} onChange={e => setAmountToAddInput(Number(e.target.value))} style={{ ...inputStyle, width: '140px', fontWeight: 'bold' }} />
-                        <button onClick={() => handleAddUserBalance(amountToAddInput)} style={{ padding: '10px 14px', backgroundColor: '#16a34a', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>➕ 加算</button>
-                        <button onClick={() => handleAddUserBalance(-amountToAddInput)} style={{ padding: '10px 14px', backgroundColor: '#ca8a04', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>➖ 減算</button>
-                      </div>
-                    </div>
-
-                    <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: 0 }} />
-
-                    <div>
-                      <h4 style={{ margin: '0 0 8px 0', color: '#ca8a04', fontSize: '14px' }}>🎖️ 限定称号を授与（Discordへ自動アナウンス）</h4>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <input type="text" placeholder="例: 万馬券ハンター" value={customTitleInput} onChange={e=>setCustomTitleInput(e.target.value)} style={inputStyle} />
-                        <button onClick={handleUpdateUserTitle} style={{ padding: '10px 14px', backgroundColor: '#ca8a04', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '12px' }}>授与 🎖️</button>
-                      </div>
-                    </div>
-
-                    <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: 0 }} />
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '10px', alignItems: 'end' }}>
-                      <div>
-                        <label style={labelStyle}>所持コイン（直接上書き）</label>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <input type="number" value={customBalanceInput} onChange={e => setCustomBalanceInput(e.target.value)} style={inputStyle} />
-                          <button onClick={handleSetUserBalance} style={{ padding: '8px 12px', backgroundColor: '#2563eb', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>設定</button>
-                        </div>
-                      </div>
-
-                      <button onClick={() => handleDeleteUser()} style={{ padding: '10px', backgroundColor: '#dc2626', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🗑️ ユーザー削除</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* 🌐 登録ユーザーIPアドレス一覧＆重複検知テーブル */}
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
-                  🌐 ユーザー登録IPアドレス管理（複アカ照合・重複検知）
-                </h3>
-
-                <div style={{ marginBottom: '12px' }}>
-                  <input
-                    type="text"
-                    placeholder="🔍 ユーザー名 または IPアドレスで検索..."
-                    value={ipSearchQuery}
-                    onChange={(e) => setIpSearchQuery(e.target.value)}
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '500px' }}>
-                    <thead>
-                      <tr style={{ backgroundColor: '#1e3a8a', color: '#fff', textAlign: 'left' }}>
-                        <th style={{ padding: '8px 10px' }}>ユーザー名</th>
-                        <th style={{ padding: '8px 10px' }}>PIN</th>
-                        <th style={{ padding: '8px 10px' }}>所持コイン</th>
-                        <th style={{ padding: '8px 10px' }}>登録IPアドレス</th>
-                        <th style={{ padding: '8px 10px', textAlign: 'center' }}>操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredUsers.map((u) => {
-                        const sameIpCount = users.filter((other) => other.ip_address && other.ip_address === u.ip_address).length;
-                        const isMultiAccount = sameIpCount > 1;
-
-                        return (
-                          <tr key={u.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: isMultiAccount ? '#fef2f2' : '#ffffff' }}>
-                            <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#0f172a' }}>
-                              👤 {u.discord_name}
-                              {isMultiAccount && (
-                                <span style={{ backgroundColor: '#ef4444', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px', fontWeight: 'bold' }}>
-                                  ⚠️ IP重複 ({sameIpCount}件)
-                                </span>
-                              )}
-                            </td>
-                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>
-                              {u.pin_code || '未設定'}
-                            </td>
-                            <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#16a34a' }}>
-                              {(u.balance || 0).toLocaleString()} G
-                            </td>
-                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: u.ip_address ? '#1e40af' : '#94a3b8' }}>
-                              🌐 {u.ip_address || '未記録 (旧アカウント)'}
-                            </td>
-                            <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                              <button
-                                onClick={() => handleDeleteUser(u.id, u.discord_name)}
-                                style={{ backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '10px' }}
-                              >
-                                🗑️ 消去
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* 調教確率設定 */}
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '2px solid #2563eb' }}>
-                <h3 style={{ margin: '0 0 10px 0', color: '#2563eb', fontSize: '16px', fontWeight: 'bold' }}>🏋️‍♂️ 調教成功確率設定</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px', gap: '10px', alignItems: 'end' }}>
-                  <div>
-                    <label style={labelStyle}>成功確率 (%)</label>
-                    <input type="number" min="0" max="100" value={trainingSuccessRate} onChange={e=>setTrainingSuccessRate(Number(e.target.value))} style={inputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>大成功(S)率 (%)</label>
-                    <input type="number" min="0" max="100" value={trainingSuperRate} onChange={e=>setTrainingSuperRate(Number(e.target.value))} style={inputStyle} />
-                  </div>
-                  <button onClick={handleSaveTrainingRates} style={{ padding: '10px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>保存</button>
-                </div>
-              </div>
-
             </div>
           )}
 

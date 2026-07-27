@@ -56,6 +56,14 @@ export default function IPATPage() {
     setIsMaintenance(maint);
   }, []);
 
+  // 🕒 10秒ごとに最新レース状態・締め切り時刻を自動更新チェック
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchRaces();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     if (races.length > 0) {
       const race = races.find((r) => r.race_number === selectedRaceNo);
@@ -307,7 +315,7 @@ export default function IPATPage() {
     }
   };
 
-  // 🎫 馬券購入処理（ボックス・ながし・フォーメーション連動）
+  // 🎫 馬券購入処理（ボックス・マルチ対応）
   const handleBuyBet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return alert('ログインしてください');
@@ -322,7 +330,6 @@ export default function IPATPage() {
     if (betType.includes('ボックス')) {
       if (boxSelectedHorses.length < 2) return alert('ボックス買いは最低2頭選択してください');
       
-      // 2頭以上の組み合わせ作成
       for (let i = 0; i < boxSelectedHorses.length; i++) {
         for (let j = 0; j < boxSelectedHorses.length; j++) {
           if (i !== j) combinations.push(`${boxSelectedHorses[i]}-${boxSelectedHorses[j]}`);
@@ -347,7 +354,6 @@ export default function IPATPage() {
       return alert(`所持コインが足りません (必要額: ${totalCost.toLocaleString()} G)`);
     }
 
-    // データベースに各馬券データを一括保存
     for (const sel of combinations) {
       await supabase.from('bets').insert([
         {
@@ -591,7 +597,7 @@ export default function IPATPage() {
                   </div>
                 </div>
 
-                {/* レース情報カード */}
+                {/* レース情報カード (発走予定時刻・状態表示機能付き) */}
                 {currentRace && (
                   <div style={{ backgroundColor: isFinished ? '#f0fdf4' : '#eff6ff', padding: '14px', borderRadius: '12px', marginBottom: '20px', border: `1px solid ${isFinished ? '#86efac' : '#bfdbfe'}`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -620,10 +626,17 @@ export default function IPATPage() {
                     <div style={{ fontSize: '12px', color: '#475569', fontWeight: 'bold' }}>
                       {currentRace.distance_m || 1800}m / {currentRace.track_condition || '良'} / 天候: {currentRace.weather || '晴'} / 1着賞金: {(currentRace.prize || 1000000).toLocaleString()} G
                     </div>
+
+                    {/* 🕒 発走予定時間の自動表示 */}
+                    {!isFinished && (
+                      <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: 'bold', backgroundColor: '#fef2f2', padding: '6px 10px', borderRadius: '6px', border: '1px solid #fca5a5' }}>
+                        🕒 発走予定時刻: {currentRace.start_time || '15:30'} （時刻になると自動締切）
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* 📱 本格投票フォーム (パターンB: ボックス・マルチ対応) */}
+                {/* 📱 本格投票フォーム */}
                 {!isFinished && (
                   <form onSubmit={handleBuyBet} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
@@ -755,7 +768,6 @@ export default function IPATPage() {
                               {isFinished ? `${finishRank}着` : h.horse_number}
                             </td>
                             <td style={{ padding: '6px 8px' }}>
-                              {/* 🐎 馬名タップで能力ポップアップ表示 */}
                               <div
                                 onClick={() => setDetailModalHorse(h)}
                                 style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '13px', cursor: 'pointer', textDecoration: 'underline' }}
