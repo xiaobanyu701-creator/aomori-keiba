@@ -69,7 +69,6 @@ export default function SuperAdminConsole() {
   const [editWeather, setEditWeather] = useState('晴');
   const [editPrize, setEditPrize] = useState(1000000);
   const [editGrade, setEditGrade] = useState('一般');
-  // 🕒 発走予定時刻（自動締め切り用）
   const [editStartTime, setEditStartTime] = useState('15:30');
 
   const [newHorseNumber, setNewHorseNumber] = useState(1);
@@ -87,17 +86,12 @@ export default function SuperAdminConsole() {
   const [rank8, setRank8] = useState('');
   const [rank9, setRank9] = useState('');
 
-  // 🎥 生配信URL設定
   const [liveStreamUrl, setLiveStreamUrl] = useState('');
-
-  // 🛑 メンテナンスモード設定
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
 
-  // 🏷️ 個人間所有権譲渡用
   const [transferHorseName, setTransferHorseName] = useState('');
   const [transferTargetOwner, setTransferTargetOwner] = useState('');
 
-  // 🤖 Discord WebHook 自動送信処理
   const sendDiscordNotification = async (title: string, description: string, color: number = 0x1e3a8a) => {
     const webhookUrl = process.env.NEXT_PUBLIC_DISCORD_WEBHOOK_URL;
     if (!webhookUrl) return;
@@ -112,7 +106,7 @@ export default function SuperAdminConsole() {
               title: title,
               description: description,
               color: color,
-              footer: { text: '🍏 青森県競馬 公式AI実況システム' },
+              footer: { text: '🍏 青森県競馬 公式実況システム' },
               timestamp: new Date().toISOString(),
             },
           ],
@@ -140,7 +134,6 @@ export default function SuperAdminConsole() {
     } 
   }, [isAuthenticated]);
 
-  // 🕒 毎10秒ごとに発走時刻を監視して自動で閉鎖（自動締め切りタイマー）
   useEffect(() => {
     if (!isAuthenticated || races.length === 0) return;
 
@@ -291,13 +284,11 @@ export default function SuperAdminConsole() {
     } catch (e) { console.error(e); }
   };
 
-  // 🎥 生配信URLの更新
   const handleSaveLiveStreamUrl = () => {
     localStorage.setItem('app_live_stream_url', liveStreamUrl);
     alert('🎥 生配信プレイヤーURLを更新しました！ユーザー画面に反映されます。');
   };
 
-  // 🛑 メンテナンスモード切替
   const handleToggleMaintenance = () => {
     const nextState = !isMaintenanceMode;
     setIsMaintenanceMode(nextState);
@@ -312,7 +303,6 @@ export default function SuperAdminConsole() {
     alert(`🛑 メンテナンスモードを【 ${nextState ? 'ON (ロック)' : 'OFF (通常)'} 】に切り替えました！`);
   };
 
-  // 🏆 今節MVP表彰＆ボーナス付与
   const handleAwardMvp = async () => {
     if (!selectedUser) return;
     const bonus = 5000000;
@@ -330,7 +320,6 @@ export default function SuperAdminConsole() {
     fetchUsers();
   };
 
-  // 🏷️ 馬のダイレクト所有権譲渡
   const handleTransferHorseOwnership = async () => {
     if (!transferHorseName || !transferTargetOwner) return alert('馬名と譲渡先馬主名を入力してください');
     if (!confirm(`「${transferHorseName}」の所有権を「${transferTargetOwner}」様へ直接譲渡しますか？`)) return;
@@ -347,7 +336,6 @@ export default function SuperAdminConsole() {
     setTransferHorseName(''); setTransferTargetOwner(''); fetchHorseMasters();
   };
 
-  // 💉 故障ケガランダム発生・治療
   const handleInjuryOrHealHorse = async (horseId: string, horseName: string, action: 'injure' | 'heal') => {
     const nextStatus = action === 'injure' ? '故障休養中(屈腱炎)' : '現役';
     await supabase.from('horse_masters').update({ status: nextStatus }).eq('id', horseId);
@@ -355,7 +343,6 @@ export default function SuperAdminConsole() {
     fetchHorseMasters();
   };
 
-  // 🔑 PINコードのリセット機能
   const handleResetPinCode = async () => {
     if (!selectedUser) return;
     if (!confirm(`「${selectedUser.discord_name}」様の暗証番号（PIN）を【 0000 】に初期化しますか？`)) return;
@@ -372,7 +359,6 @@ export default function SuperAdminConsole() {
     setCustomPinInput('0000'); fetchUsers();
   };
 
-  // 🎁 全ユーザー一括コイン配布
   const handleDistributeBulkCoins = async () => {
     if (bulkGiftAmount <= 0) return alert('正しい金額を入力してください');
     if (!confirm(`全プレイヤー（${users.length}名）へ一斉に【 ${bulkGiftAmount.toLocaleString()} G 】をプレゼントしますか？`)) return;
@@ -392,7 +378,6 @@ export default function SuperAdminConsole() {
     fetchUsers();
   };
 
-  // 💸 馬券返還・全額自動返金処理
   const handleRefundRaceBets = async () => {
     if (!currentRace) return;
     if (!confirm(`⚠️ 警告: 【${selectedRaceNo}R】に賭けられたすべての馬券をキャンセルし、全ユーザーへ賭け金を完全返金しますか？`)) return;
@@ -424,7 +409,6 @@ export default function SuperAdminConsole() {
     fetchRaces(); fetchUsers(); fetchAllBets();
   };
 
-  // 🔄 着順確定の取り消し（清算キャンセル）機能
   const handleUnsettleRace = async () => {
     if (!currentRace) return;
     if (!confirm(`⚠️ 【${selectedRaceNo}R】の確定状態を取り消しますか？\n（付与された的中配当金を引き落とし、未確定に戻します）`)) return;
@@ -453,7 +437,6 @@ export default function SuperAdminConsole() {
     fetchRaces(); fetchUsers(); fetchAllBets();
   };
 
-  // 🔨 セリ（オークション）の強制取り消し
   const handleForceCancelAuction = async (auctionId: string, horseName: string) => {
     if (!confirm(`「${horseName}」のセリ出品を強制取り消し（削除）しますか？`)) return;
 
@@ -464,7 +447,6 @@ export default function SuperAdminConsole() {
     fetchAuctions(); fetchHorseMasters();
   };
 
-  // 🏆 6. AIライバル馬主（CPU強豪馬）自動エントリー機能
   const handleAddAiRivalHorse = async () => {
     if (!currentRace) return;
     const rivals = ['[AI馬主] 帝王ペガサス', '[AI馬主] 疾風シャドー', '[AI馬主] 覇王カイザー', '[AI馬主] イナズマライジン'];
@@ -483,7 +465,6 @@ export default function SuperAdminConsole() {
     fetchHorses(currentRace.id);
   };
 
-  // 🤖 7. AI自動オッズ計算・一括設定処理
   const handleAutoCalculateOdds = async () => {
     if (!horses || horses.length === 0) return alert('出走馬が登録されていません');
     if (!confirm(`【${selectedRaceNo}R】の全出走馬（${horses.length}頭）の単勝オッズをAI自動計算して一括更新しますか？`)) return;
@@ -752,7 +733,6 @@ export default function SuperAdminConsole() {
     alert(`🎉 「${selectedUser.discord_name}」様に ${amount.toLocaleString()} G を追加しました！`); fetchUsers();
   };
 
-  // 🗑️ アカウント消去 ＆ 不正セキュリティ通知
   const handleDeleteUser = async (userId?: string, userName?: string) => {
     const targetId = userId || selectedUser?.id;
     const targetName = userName || selectedUser?.discord_name;
@@ -816,7 +796,6 @@ export default function SuperAdminConsole() {
     if (currentRace?.id) fetchHorses(currentRace.id);
   };
 
-  // 🎙️ 5. AI実況速報機能付き 🏁 着順確定 ＆ 配当金清算 ＆ Discord自動速報
   const handleSettleFullRace = async () => {
     if (!currentRace || !rank1) return alert('最低限1着の馬を選択してください');
     if (!confirm(`【${selectedRaceNo}R】の結果を確定し、的中者全員へ配当金を自動振込＆AI実況Discord速報を送信しますか？`)) return;
@@ -895,7 +874,6 @@ export default function SuperAdminConsole() {
       first_horse: rank1, second_horse: rank2, third_horse: rank3, rank4, rank5, rank6, rank7, rank8, rank9
     }).eq('id', currentRace.id);
 
-    // 🎙️ AI実況ダイジェスト文の動的生成
     const aiDigest = `🎙️ **【AI実況ダイジェスト】**\n「最後の直線、激しい競り合いの中から堂々抜け出したのは **${rank1}番 ${h1 ? h1.name : ''}**！猛烈な追い上げを見せた **${rank2 ? `${rank2}番 ${h2 ? h2.name : ''}` : ''}** を振り切って見事栄冠に輝きました！」`;
 
     const desc = `
@@ -1006,201 +984,94 @@ ${aiDigest}
 
         <div style={{ maxWidth: '950px', margin: '0 auto' }}>
 
-          {/* 🎥 生配信URL設定 */}
-          {adminTab === 'live_stream' && (
-            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
-              <h2 style={{ color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold', margin: '0 0 12px 0' }}>🎥 YouTube/Twitch 生配信埋め込み設定</h2>
-              <label style={labelStyle}>生配信プレイヤーURL (埋め込み用)</label>
-              <input type="text" placeholder="https://www.youtube.com/embed/..." value={liveStreamUrl} onChange={e=>setLiveStreamUrl(e.target.value)} style={{ ...inputStyle, marginBottom: '12px' }} />
-              <button onClick={handleSaveLiveStreamUrl} style={{ width: '100%', padding: '12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
-                生配信URLを公開保存 🎥
-              </button>
-            </div>
-          )}
-
-          {/* 🛑 メンテナンスモード切替 */}
-          {adminTab === 'maintenance' && (
-            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '2px solid #ef4444', maxWidth: '500px' }}>
-              <h2 style={{ color: '#ef4444', fontSize: '18px', fontWeight: 'bold', margin: '0 0 12px 0' }}>🛑 メンテナンスモード状態コントロール</h2>
-              <p style={{ fontSize: '12px', color: '#64748b', lineHeight: '1.5' }}>
-                ONにすると一般プレイヤーのIPAT画面および馬主画面が一時ロックされ、アプデ作業を安全に行えます。
-              </p>
-              <button onClick={handleToggleMaintenance} style={{ width: '100%', padding: '16px', backgroundColor: isMaintenanceMode ? '#16a34a' : '#ef4444', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-                {isMaintenanceMode ? '🟢 メンテナンスを終了する (解除)' : '🛑 緊急メンテナンスを開始する (ロック)'}
-              </button>
-            </div>
-          )}
-
-          {/* 🏆 今節MVP表彰 */}
-          {adminTab === 'mvp_reward' && (
-            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '2px solid #eab308', maxWidth: '500px' }}>
-              <h2 style={{ color: '#ca8a04', fontSize: '18px', fontWeight: 'bold', margin: '0 0 12px 0' }}>🏆 今節MVP（最優秀馬主）特別表彰</h2>
-              <div style={{ marginBottom: '12px' }}>
-                <label style={labelStyle}>表彰するプレイヤーを選択</label>
-                <select value={selectedUserId} onChange={e=>setSelectedUserId(e.target.value)} style={inputStyle}>
-                  {users.map(u => <option key={u.id} value={u.id}>👤 {u.discord_name}</option>)}
-                </select>
-              </div>
-              <button onClick={handleAwardMvp} style={{ width: '100%', padding: '14px', backgroundColor: '#eab308', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
-                今節MVPとして表彰 ＆ 500万G贈呈 🏆
-              </button>
-            </div>
-          )}
-
-          {/* ⚠️ 異常賭け金アラート */}
-          {adminTab === 'anomaly_detect' && (
-            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-              <h2 style={{ color: '#dc2626', fontSize: '18px', fontWeight: 'bold', margin: '0 0 12px 0' }}>⚠️ 高額・異常取引（インサイダー/複アカ流金）リアルタイム監視</h2>
-              {suspiciousBets.length === 0 ? (
-                <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '10px' }}>
-                  現在1,000万G以上の異常・高額賭け金取引は検知されていません。
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {suspiciousBets.map(b => (
-                    <div key={b.id} style={{ backgroundColor: '#fef2f2', padding: '12px', borderRadius: '8px', border: '1px solid #fca5a5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <span style={{ backgroundColor: '#dc2626', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>🚨 異常検知</span>
-                        <div style={{ fontWeight: 'bold', fontSize: '13px', marginTop: '4px' }}>【{b.bet_type}】 {b.selection}</div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '16px', color: '#dc2626', fontWeight: '900' }}>{Number(b.amount).toLocaleString()} G</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 📊 売上アナリティクスグラフ */}
-          {adminTab === 'analytics' && (
-            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-              <h2 style={{ color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold', margin: '0 0 16px 0' }}>📊 券種別 売上アナリティクス</h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {betTypeStats.map(s => (
-                  <div key={s.type}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>
-                      <span>🎫 {s.type}</span>
-                      <span style={{ color: '#16a34a' }}>{s.total.toLocaleString()} G</span>
-                    </div>
-                    <div style={{ width: '100%', backgroundColor: '#f1f5f9', height: '12px', borderRadius: '6px', overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.min(100, (s.total / 50000000) * 100)}%`, backgroundColor: '#2563eb', height: '100%' }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ⚡ 12R一括コントロール ＆ 🕒 発走予定時刻設定 ＆ 💸 全額返金 */}
-          {adminTab === 'race' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '2px solid #2563eb' }}>
-                <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>⚡ 1R〜12R 一括状態コントロール</h3>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button onClick={() => handleBulkSetRaceStatus('open')} style={{ flex: 1, backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                    🟢 全12R 受付開始
-                  </button>
-                  <button onClick={() => handleBulkSetRaceStatus('closed')} style={{ flex: 1, backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                    🔒 全12R 投票締切
-                  </button>
-                  <button onClick={handleResetAllRaces} style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                    🧹 開催クリア
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <h3 style={{ margin: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '18px' }}>🛠️ 【{selectedRaceNo}R】 レース名・自動締切時間設定</h3>
-                  <button onClick={handleRefundRaceBets} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
-                    💸 【{selectedRaceNo}R】全額自動返金
-                  </button>
-                </div>
-
-                <form onSubmit={handleUpdateRaceInfo} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div>
-                    <label style={labelStyle}>レース名</label>
-                    <input type="text" placeholder="例: 青森県ダービー" value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#1e3a8a' }} required />
-                  </div>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    <div>
-                      <label style={labelStyle}>🏆 レース格付け</label>
-                      <select value={editGrade} onChange={e=>setEditGrade(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: editGrade === 'G1' ? '#dc2626' : editGrade === 'G2' ? '#d97706' : '#2563eb' }}>
-                        <option value="一般">一般競走</option>
-                        <option value="G3">G3 重賞</option>
-                        <option value="G2">G2 重賞</option>
-                        <option value="G1">G1 最高峰競走</option>
-                      </select>
-                    </div>
-
-                    {/* 🕒 自動締め切り発走時刻入力フォーム */}
-                    <div>
-                      <label style={labelStyle}>🕒 発走・自動締切時刻 (例: 15:30)</label>
-                      <input
-                        type="time"
-                        value={editStartTime}
-                        onChange={e => setEditStartTime(e.target.value)}
-                        style={{ ...inputStyle, fontWeight: 'bold', color: '#dc2626' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                    <div><label style={labelStyle}>距離 (m)</label><input type="number" step="100" value={editDistance} onChange={e=>setEditDistance(Number(e.target.value))} style={inputStyle} /></div>
-                    <div><label style={labelStyle}>馬場</label><select value={editCondition} onChange={e=>setEditCondition(e.target.value)} style={inputStyle}><option value="良">良</option><option value="稍重">稍重</option><option value="重">重</option><option value="不良">不良</option></select></div>
-                    <div><label style={labelStyle}>天候</label><select value={editWeather} onChange={e=>setEditWeather(e.target.value)} style={inputStyle}><option value="晴">晴</option><option value="曇">曇</option><option value="雨">雨</option><option value="雪">雪</option></select></div>
-                  </div>
-                  <div>
-                    <label style={labelStyle}>💰 1着総賞金 (G)</label>
-                    <input type="number" step="100000" value={editPrize} onChange={e=>setEditPrize(Number(e.target.value))} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }} />
-                  </div>
-                  <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
-                    設定を保存 💾 （時刻になると自動締め切り）
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* 👥 TAB: プレイヤー管理 */}
+          {/* 👥 プレイヤー管理 */}
           {adminTab === 'users' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div style={{ backgroundColor: '#fefce8', border: '2px solid #eab308', borderRadius: '16px', padding: '16px' }}>
                 <h3 style={{ margin: '0 0 8px 0', color: '#ca8a04', fontSize: '15px', fontWeight: 'bold' }}>
-                  🎁 全プレイヤー一括コインプレゼント
+                  🎁 全プレイヤー一括コインプレゼント（イベント・お詫び用）
                 </h3>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input type="number" step="100000" value={bulkGiftAmount} onChange={(e) => setBulkImportGiftAmount(Number(e.target.value))} style={{ ...inputStyle, width: '160px', fontWeight: 'bold' }} />
-                  <button onClick={handleDistributeBulkCoins} style={{ padding: '10px 16px', backgroundColor: '#eab308', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>全員に配る 🎁</button>
+                  <input
+                    type="number"
+                    step="100000"
+                    value={bulkGiftAmount}
+                    onChange={(e) => setBulkImportGiftAmount(Number(e.target.value))}
+                    style={{ ...inputStyle, width: '160px', fontWeight: 'bold' }}
+                  />
+                  <button
+                    onClick={handleDistributeBulkCoins}
+                    style={{ padding: '10px 16px', backgroundColor: '#eab308', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}
+                  >
+                    全員に配る 🎁
+                  </button>
                 </div>
               </div>
 
               <div style={{ backgroundColor: '#ffffff', border: '2px solid #2563eb', borderRadius: '16px', padding: '20px' }}>
                 <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>👤 プレイヤー個別管理 ＆ 称号・PIN</h2>
-                <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '2px solid #2563eb', fontSize: '15px', fontWeight: 'bold', backgroundColor: '#eff6ff', width: '100%' }}>
-                  {users.map(u => <option key={u.id} value={u.id}>👤 {u.discord_name} (PIN: {u.pin_code || '未設定'} / 残高: {(u.balance || 0).toLocaleString()}G)</option>)}
-                </select>
+                
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={labelStyle}>操作するプレイヤーを選択</label>
+                  <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '2px solid #2563eb', fontSize: '15px', fontWeight: 'bold', backgroundColor: '#eff6ff', width: '100%' }}>
+                    {users.map(u => (
+                      <option key={u.id} value={u.id}>
+                        👤 {u.discord_name} (PIN: {u.pin_code || '未設定'} / 残高: {(u.balance || 0).toLocaleString()}G)
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
                 {selectedUser && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginTop: '12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: '13px', color: '#1e3a8a', fontWeight: 'bold' }}>🔑 PIN: <span style={{ color: '#dc2626' }}>{selectedUser.pin_code || '未設定'}</span></div>
-                      <button onClick={handleResetPinCode} style={{ padding: '6px 12px', backgroundColor: '#64748b', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>🔑 0000に初期化</button>
+                      <div style={{ fontSize: '13px', color: '#1e3a8a', fontWeight: 'bold' }}>
+                        🔑 現在の暗証番号 (PIN): <span style={{ color: '#dc2626', letterSpacing: '2px', fontSize: '15px' }}>{selectedUser.pin_code || '未設定'}</span>
+                      </div>
+                      <button onClick={handleResetPinCode} style={{ padding: '6px 12px', backgroundColor: '#64748b', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>
+                        🔑 0000に初期化
+                      </button>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <input type="number" step="100000" value={amountToAddInput} onChange={e => setAmountToAddInput(Number(e.target.value))} style={{ ...inputStyle, width: '140px' }} />
-                      <button onClick={() => handleAddUserBalance(amountToAddInput)} style={{ padding: '10px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>➕ 加算</button>
-                      <button onClick={() => handleAddUserBalance(-amountToAddInput)} style={{ padding: '10px', backgroundColor: '#ca8a04', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>➖ 減算</button>
+
+                    <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: 0 }} />
+
+                    <div>
+                      <h4 style={{ margin: '0 0 8px 0', color: '#16a34a', fontSize: '14px' }}>💰 コイン加算・引き落とし</h4>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <input type="number" step="100000" value={amountToAddInput} onChange={e => setAmountToAddInput(Number(e.target.value))} style={{ ...inputStyle, width: '140px', fontWeight: 'bold' }} />
+                        <button onClick={() => handleAddUserBalance(amountToAddInput)} style={{ padding: '10px 14px', backgroundColor: '#16a34a', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>➕ 加算</button>
+                        <button onClick={() => handleAddUserBalance(-amountToAddInput)} style={{ padding: '10px 14px', backgroundColor: '#ca8a04', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>➖ 減算</button>
+                      </div>
                     </div>
-                    <button onClick={() => handleDeleteUser()} style={{ padding: '10px', backgroundColor: '#dc2626', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🗑️ ユーザー削除</button>
+
+                    <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: 0 }} />
+
+                    <div>
+                      <h4 style={{ margin: '0 0 8px 0', color: '#ca8a04', fontSize: '14px' }}>🎖️ 限定称号を授与（Discordへ自動アナウンス）</h4>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <input type="text" placeholder="例: 万馬券ハンター" value={customTitleInput} onChange={e=>setCustomTitleInput(e.target.value)} style={inputStyle} />
+                        <button onClick={handleUpdateUserTitle} style={{ padding: '10px 14px', backgroundColor: '#ca8a04', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '12px' }}>授与 🎖️</button>
+                      </div>
+                    </div>
+
+                    <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: 0 }} />
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '10px', alignItems: 'end' }}>
+                      <div>
+                        <label style={labelStyle}>所持コイン（直接上書き）</label>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <input type="number" value={customBalanceInput} onChange={e => setCustomBalanceInput(e.target.value)} style={inputStyle} />
+                          <button onClick={handleSetUserBalance} style={{ padding: '8px 12px', backgroundColor: '#2563eb', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>設定</button>
+                        </div>
+                      </div>
+
+                      <button onClick={() => handleDeleteUser()} style={{ padding: '10px', backgroundColor: '#dc2626', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🗑️ ユーザー削除</button>
+                    </div>
                   </div>
                 )}
               </div>
 
-              {/* 🌐 登録ユーザーIPアドレス一覧＆重複検知テーブル */}
+              {/* 🌐 IP照合 */}
               <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
                   🌐 ユーザー登録IPアドレス管理（複アカ照合・重複検知）
@@ -1269,7 +1140,78 @@ ${aiDigest}
             </div>
           )}
 
-          {/* 🐴 TAB: 出走馬追加 ＆ 🤖 AI機能群（オッズ・予想印・AIライバル馬主） */}
+          {/* ⚡ 12R一括/時刻設定/返金 */}
+          {adminTab === 'race' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '2px solid #2563eb' }}>
+                <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>⚡ 1R〜12R 一括状態コントロール</h3>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button onClick={() => handleBulkSetRaceStatus('open')} style={{ flex: 1, backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    🟢 全12R 受付開始
+                  </button>
+                  <button onClick={() => handleBulkSetRaceStatus('closed')} style={{ flex: 1, backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    🔒 全12R 投票締切
+                  </button>
+                  <button onClick={handleResetAllRaces} style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    🧹 開催クリア
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h3 style={{ margin: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '18px' }}>🛠️ 【{selectedRaceNo}R】 レース名・自動締切時間設定</h3>
+                  <button onClick={handleRefundRaceBets} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                    💸 【{selectedRaceNo}R】全額自動返金
+                  </button>
+                </div>
+
+                <form onSubmit={handleUpdateRaceInfo} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <label style={labelStyle}>レース名</label>
+                    <input type="text" placeholder="例: 青森県ダービー" value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#1e3a8a' }} required />
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <div>
+                      <label style={labelStyle}>🏆 レース格付け</label>
+                      <select value={editGrade} onChange={e=>setEditGrade(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: editGrade === 'G1' ? '#dc2626' : editGrade === 'G2' ? '#d97706' : '#2563eb' }}>
+                        <option value="一般">一般競走</option>
+                        <option value="G3">G3 重賞</option>
+                        <option value="G2">G2 重賞</option>
+                        <option value="G1">G1 最高峰競走</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={labelStyle}>🕒 発走・自動締切時刻 (例: 15:30)</label>
+                      <input
+                        type="time"
+                        value={editStartTime}
+                        onChange={e => setEditStartTime(e.target.value)}
+                        style={{ ...inputStyle, fontWeight: 'bold', color: '#dc2626' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                    <div><label style={labelStyle}>距離 (m)</label><input type="number" step="100" value={editDistance} onChange={e=>setEditDistance(Number(e.target.value))} style={inputStyle} /></div>
+                    <div><label style={labelStyle}>馬場</label><select value={editCondition} onChange={e=>setEditCondition(e.target.value)} style={inputStyle}><option value="良">良</option><option value="稍重">稍重</option><option value="重">重</option><option value="不良">不良</option></select></div>
+                    <div><label style={labelStyle}>天候</label><select value={editWeather} onChange={e=>setEditWeather(e.target.value)} style={inputStyle}><option value="晴">晴</option><option value="曇">曇</option><option value="雨">雨</option><option value="雪">雪</option></select></div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>💰 1着総賞金 (G)</label>
+                    <input type="number" step="100000" value={editPrize} onChange={e=>setEditPrize(Number(e.target.value))} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }} />
+                  </div>
+                  <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+                    設定を保存 💾 （時刻になると自動締め切り）
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* 🐴 出走馬/AIオッズ/新聞 */}
           {adminTab === 'horses' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '2px solid #2563eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
@@ -1342,33 +1284,268 @@ ${aiDigest}
             </div>
           )}
 
-          {/* 💬 TAB: パドックチャット管理 */}
-          {adminTab === 'chat_admin' && (
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
-              <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>
-                💬 パドック雑談チャット リアルタイム監視＆削除
-              </h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {chatMessages.length === 0 ? (
-                  <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>投稿はありません</div>
-                ) : (
-                  chatMessages.map(m => (
-                    <div key={m.id} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          {/* ⚠️ 異常検知 */}
+          {adminTab === 'anomaly_detect' && (
+            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+              <h2 style={{ color: '#dc2626', fontSize: '18px', fontWeight: 'bold', margin: '0 0 12px 0' }}>⚠️ 高額・異常取引（インサイダー/複アカ流金）リアルタイム監視</h2>
+              {suspiciousBets.length === 0 ? (
+                <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '10px' }}>
+                  現在1,000万G以上の異常・高額賭け金取引は検知されていません。
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {suspiciousBets.map(b => (
+                    <div key={b.id} style={{ backgroundColor: '#fef2f2', padding: '12px', borderRadius: '8px', border: '1px solid #fca5a5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <div style={{ fontWeight: 'bold', color: '#1e3a8a', fontSize: '13px' }}>👤 {m.discord_name}</div>
-                        <div style={{ fontSize: '13px', color: '#334155', marginTop: '2px' }}>{m.content}</div>
+                        <span style={{ backgroundColor: '#dc2626', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>🚨 異常検知</span>
+                        <div style={{ fontWeight: 'bold', fontSize: '13px', marginTop: '4px' }}>【{b.bet_type}】 {b.selection}</div>
                       </div>
-                      <button onClick={() => handleDeleteChatMessage(m.id)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
-                        削除 🗑️
-                      </button>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '16px', color: '#dc2626', fontWeight: '900' }}>{Number(b.amount).toLocaleString()} G</div>
+                      </div>
                     </div>
-                  ))
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 📊 売上アナリティクス */}
+          {adminTab === 'analytics' && (
+            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+              <h2 style={{ color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold', margin: '0 0 16px 0' }}>📊 券種別 売上アナリティクス</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {betTypeStats.map(s => (
+                  <div key={s.type}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>
+                      <span>🎫 {s.type}</span>
+                      <span style={{ color: '#16a34a' }}>{s.total.toLocaleString()} G</span>
+                    </div>
+                    <div style={{ width: '100%', backgroundColor: '#f1f5f9', height: '12px', borderRadius: '6px', overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.min(100, (s.total / 50000000) * 100)}%`, backgroundColor: '#2563eb', height: '100%' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 🎥 生配信枠設定 */}
+          {adminTab === 'live_stream' && (
+            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
+              <h2 style={{ color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold', margin: '0 0 12px 0' }}>🎥 YouTube/Twitch 生配信埋め込み設定</h2>
+              <label style={labelStyle}>生配信プレイヤーURL (埋め込み用)</label>
+              <input type="text" placeholder="https://www.youtube.com/embed/..." value={liveStreamUrl} onChange={e=>setLiveStreamUrl(e.target.value)} style={{ ...inputStyle, marginBottom: '12px' }} />
+              <button onClick={handleSaveLiveStreamUrl} style={{ width: '100%', padding: '12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                生配信URLを公開保存 🎥
+              </button>
+            </div>
+          )}
+
+          {/* 🛑 メンテナンス切替 */}
+          {adminTab === 'maintenance' && (
+            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '2px solid #ef4444', maxWidth: '500px' }}>
+              <h2 style={{ color: '#ef4444', fontSize: '18px', fontWeight: 'bold', margin: '0 0 12px 0' }}>🛑 メンテナンスモード状態コントロール</h2>
+              <p style={{ fontSize: '12px', color: '#64748b', lineHeight: '1.5' }}>
+                ONにすると一般プレイヤーのIPAT画面および馬主画面が一時ロックされ、アプデ作業を安全に行えます。
+              </p>
+              <button onClick={handleToggleMaintenance} style={{ width: '100%', padding: '16px', backgroundColor: isMaintenanceMode ? '#16a34a' : '#ef4444', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
+                {isMaintenanceMode ? '🟢 メンテナンスを終了する (解除)' : '🛑 緊急メンテナンスを開始する (ロック)'}
+              </button>
+            </div>
+          )}
+
+          {/* 🏆 今節MVP表彰 */}
+          {adminTab === 'mvp_reward' && (
+            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '2px solid #eab308', maxWidth: '500px' }}>
+              <h2 style={{ color: '#ca8a04', fontSize: '18px', fontWeight: 'bold', margin: '0 0 12px 0' }}>🏆 今節MVP（最優秀馬主）特別表彰</h2>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={labelStyle}>表彰するプレイヤーを選択</label>
+                <select value={selectedUserId} onChange={e=>setSelectedUserId(e.target.value)} style={inputStyle}>
+                  {users.map(u => <option key={u.id} value={u.id}>👤 {u.discord_name}</option>)}
+                </select>
+              </div>
+              <button onClick={handleAwardMvp} style={{ width: '100%', padding: '14px', backgroundColor: '#eab308', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+                今節MVPとして表彰 ＆ 500万G贈呈 🏆
+              </button>
+            </div>
+          )}
+
+          {/* 🏁 着順確定/消去 */}
+          {adminTab === 'settle' && (
+            <div style={{ border: '2px solid #2563eb', padding: '20px', borderRadius: '16px', backgroundColor: '#ffffff' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ color: '#1e3a8a', margin: 0, fontWeight: 'bold', fontSize: '18px' }}>
+                  🏆 【{selectedRaceNo}R】 着順確定（1着〜9着） ＆ AI自動実況
+                </h3>
+                
+                <button
+                  onClick={handleUnsettleRace}
+                  style={{ backgroundColor: '#ca8a04', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                >
+                  🔄 【{selectedRaceNo}R】確定取り消し
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+                <div><label style={{ fontSize: '11px', color: '#dc2626', fontWeight: 'bold', display: 'block' }}>🥇 1着 (必須)</label><select value={rank1} onChange={e=>setRank1(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
+                <div><label style={{ fontSize: '11px', color: '#2563eb', fontWeight: 'bold', display: 'block' }}>🥈 2着</label><select value={rank2} onChange={e=>setRank2(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
+                <div><label style={{ fontSize: '11px', color: '#ca8a04', fontWeight: 'bold', display: 'block' }}>🥉 3着</label><select value={rank3} onChange={e=>setRank3(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
+                <div><label style={labelStyle}>4着</label><select value={rank4} onChange={e=>setRank4(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
+                <div><label style={labelStyle}>5着</label><select value={rank5} onChange={e=>setRank5(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
+                <div><label style={labelStyle}>6着</label><select value={rank6} onChange={e=>setRank6(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
+              </div>
+
+              <button 
+                onClick={handleSettleFullRace} 
+                style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '16px', fontSize: '16px', fontWeight: 'bold', borderRadius: '10px', cursor: 'pointer' }}
+              >
+                🏁 結果確定・配当自動振込 ＆ AI自動実況Discord速報 🎙️
+              </button>
+            </div>
+          )}
+
+          {/* 📨 出走申請 */}
+          {adminTab === 'race_requests_admin' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '2px solid #2563eb' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h2 style={{ margin: 0, color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
+                  📨 出走 ＆ 騎手 申請リスト ({raceRequests.length}件)
+                </h2>
+                <button onClick={fetchRaceRequests} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                  🔄 更新
+                </button>
+              </div>
+
+              {raceRequests.length === 0 ? (
+                <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                  現在未処理の出走申請はありません。
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {raceRequests.map(req => (
+                    <div key={req.id} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ backgroundColor: '#1e3a8a', color: '#fff', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px' }}>
+                            【{req.target_race_no}R】
+                          </span>
+                          <span style={{ fontWeight: 'bold', fontSize: '16px', color: '#16a34a' }}>🐎 {req.horse_name}</span>
+                        </div>
+                        <span style={{ fontSize: '12px', color: '#475569' }}>馬主: {req.owner_name}</span>
+                      </div>
+
+                      <div style={{ fontSize: '13px', color: '#2563eb', fontWeight: 'bold' }}>
+                        希望騎手: 🏇 {req.preferred_jockey}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={() => handleApproveRaceRequest(req)} style={{ flex: 1, padding: '10px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
+                          承認・自動登録 🟢
+                        </button>
+                        <button onClick={() => handleRejectRaceRequest(req)} style={{ padding: '10px 14px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
+                          拒否 🔴
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 🔨 セリ管理 */}
+          {adminTab === 'auction_admin' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
+                <h2 style={{ margin: '0 0 14px 0', color: '#d97706', fontSize: '18px', fontWeight: 'bold' }}>
+                  🔨 運営公式 セレクトセール出品（Discord通知付）
+                </h2>
+                <form onSubmit={handleAddOfficialAuction} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <label style={labelStyle}>目玉競走馬の名前</label>
+                    <input type="text" placeholder="例: ★SS確定 サンデーサイレンス産駒" value={officialHorseName} onChange={e=>setOfficialHorseName(e.target.value)} style={inputStyle} required />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>最低開始価格 (G)</label>
+                    <input type="number" step="100000" value={officialStartPrice} onChange={e=>setOfficialStartPrice(Number(e.target.value))} style={inputStyle} required />
+                  </div>
+                  <button type="submit" style={{ padding: '14px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+                    セレクトセールに出品する 🔨
+                  </button>
+                </form>
+              </div>
+
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ margin: '0 0 12px 0', color: '#d97706', fontSize: '16px', fontWeight: 'bold' }}>
+                  🔨 現在出品中のセリ市リスト（強制取り消し可能）
+                </h3>
+                {auctions.length === 0 ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>現在出品中の馬はありません</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {auctions.map(a => (
+                      <div key={a.id} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <strong style={{ color: '#d97706', fontSize: '14px' }}>🐎 {a.horse_name}</strong>
+                          <div style={{ fontSize: '11px', color: '#64748b' }}>出品者: {a.seller_name} / 最高額: {(a.current_bid || 0).toLocaleString()}G ({a.highest_bidder})</div>
+                        </div>
+                        <button onClick={() => handleForceCancelAuction(a.id, a.horse_name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>
+                          強制削除 🗑️
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
           )}
 
-          {/* 🧬 TAB: 馬の譲渡 ＆ 生産馬管理 */}
+          {/* 🐎 現役馬・故障治療 */}
+          {adminTab === 'horse_masters' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
+                <h3 style={{ marginTop: 0, color: '#16a34a', fontWeight: 'bold', fontSize: '16px' }}>🐎 競走馬を新規直接登録</h3>
+                <form onSubmit={handleAddHorseMaster} style={{ display: 'flex', gap: '10px', flexDirection: 'column' }}>
+                  <input type="text" placeholder="馬名" value={addHorseMasterName} onChange={e=>setAddHorseMasterName(e.target.value)} style={inputStyle} required />
+                  <input type="text" placeholder="馬主名 (空欄なら運営直営)" value={addHorseMasterOwner} onChange={e=>setAddHorseMasterOwner(e.target.value)} style={inputStyle} />
+                  <button type="submit" style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>登録</button>
+                </form>
+              </div>
+
+              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>📋 現役競走馬マスター ({activeHorseMasters.length}頭) ＆ 💉 故障治療操作</h3>
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '12px', fontSize: '12px', minWidth: '500px' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}>
+                        <th style={{ padding: '8px' }}>馬名</th><th>馬主</th><th>状態</th><th>ケガ/治療操作</th><th>操作</th><th>削除</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeHorseMasters.map(hm => (
+                        <tr key={hm.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px', fontWeight: 'bold', color: '#16a34a' }}>🐎 {hm.name}</td>
+                          <td style={{ fontWeight: 'bold', color: '#2563eb' }}>👤 {hm.owner_name || '未設定'}</td>
+                          <td><span style={{ padding: '3px 6px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px', color: '#fff', backgroundColor: hm.status?.includes('故障') ? '#ef4444' : hm.status === '放牧中' ? '#3b82f6' : '#16a34a' }}>{hm.status || '現役'}</span></td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button onClick={() => handleInjuryOrHealHorse(hm.id, hm.name, 'injure')} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '3px 6px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>💉 屈腱炎</button>
+                              <button onClick={() => handleInjuryOrHealHorse(hm.id, hm.name, 'heal')} style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '3px 6px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>♨️ 完治復帰</button>
+                            </div>
+                          </td>
+                          <td><button onClick={() => handleToggleRestingStatus(hm.id, hm.status)} style={{ backgroundColor: hm.status === '放牧中' ? '#16a34a' : '#3b82f6', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>{hm.status === '放牧中' ? '復帰' : '放牧'}</button></td>
+                          <td><button onClick={()=>handleDeleteHorseMaster(hm.id, hm.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>削除</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 🧬 生産・譲渡管理 */}
           {adminTab === 'breed_edit' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '2px solid #2563eb' }}>
@@ -1417,133 +1594,7 @@ ${aiDigest}
             </div>
           )}
 
-          {/* 🐎 TAB: 現役馬マスター ＆ 故障治療 */}
-          {adminTab === 'horse_masters' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
-                <h3 style={{ marginTop: 0, color: '#16a34a', fontWeight: 'bold', fontSize: '16px' }}>🐎 競走馬を新規直接登録</h3>
-                <form onSubmit={handleAddHorseMaster} style={{ display: 'flex', gap: '10px', flexDirection: 'column' }}>
-                  <input type="text" placeholder="馬名" value={addHorseMasterName} onChange={e=>setAddHorseMasterName(e.target.value)} style={inputStyle} required />
-                  <input type="text" placeholder="馬主名 (空欄なら運営直営)" value={addHorseMasterOwner} onChange={e=>setAddHorseMasterOwner(e.target.value)} style={inputStyle} />
-                  <button type="submit" style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>登録</button>
-                </form>
-              </div>
-
-              <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>📋 現役競走馬マスター ({activeHorseMasters.length}頭) ＆ 💉 故障治療操作</h3>
-                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '12px', fontSize: '12px', minWidth: '500px' }}>
-                    <thead>
-                      <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}>
-                        <th style={{ padding: '8px' }}>馬名</th><th>馬主</th><th>状態</th><th>ケガ/治療操作</th><th>操作</th><th>削除</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeHorseMasters.map(hm => (
-                        <tr key={hm.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontWeight: 'bold', color: '#16a34a' }}>🐎 {hm.name}</td>
-                          <td style={{ fontWeight: 'bold', color: '#2563eb' }}>👤 {hm.owner_name || '未設定'}</td>
-                          <td><span style={{ padding: '3px 6px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px', color: '#fff', backgroundColor: hm.status?.includes('故障') ? '#ef4444' : hm.status === '放牧中' ? '#3b82f6' : '#16a34a' }}>{hm.status || '現役'}</span></td>
-                          <td>
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                              <button onClick={() => handleInjuryOrHealHorse(hm.id, hm.name, 'injure')} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '3px 6px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>💉 屈腱炎</button>
-                              <button onClick={() => handleInjuryOrHealHorse(hm.id, hm.name, 'heal')} style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '3px 6px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>♨️ 完治復帰</button>
-                            </div>
-                          </td>
-                          <td><button onClick={() => handleToggleRestingStatus(hm.id, hm.status)} style={{ backgroundColor: hm.status === '放牧中' ? '#16a34a' : '#3b82f6', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>{hm.status === '放牧中' ? '復帰' : '放牧'}</button></td>
-                          <td><button onClick={()=>handleDeleteHorseMaster(hm.id, hm.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>削除</button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 🔨 TAB: セレクトセール出品 ＆ 強制キャンセル管理 */}
-          {adminTab === 'auction_admin' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
-                <h2 style={{ margin: '0 0 14px 0', color: '#d97706', fontSize: '18px', fontWeight: 'bold' }}>
-                  🔨 運営公式 セレクトセール出品（Discord通知付）
-                </h2>
-                <form onSubmit={handleAddOfficialAuction} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div>
-                    <label style={labelStyle}>目玉競走馬の名前</label>
-                    <input type="text" placeholder="例: ★SS確定 サンデーサイレンス産駒" value={officialHorseName} onChange={e=>setOfficialHorseName(e.target.value)} style={inputStyle} required />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>最低開始価格 (G)</label>
-                    <input type="number" step="100000" value={officialStartPrice} onChange={e=>setOfficialStartPrice(Number(e.target.value))} style={inputStyle} required />
-                  </div>
-                  <button type="submit" style={{ padding: '14px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
-                    セレクトセールに出品する 🔨
-                  </button>
-                </form>
-              </div>
-
-              {/* 出品中オークション強制管理 */}
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ margin: '0 0 12px 0', color: '#d97706', fontSize: '16px', fontWeight: 'bold' }}>
-                  🔨 現在出品中のセリ市リスト（強制取り消し可能）
-                </h3>
-                {auctions.length === 0 ? (
-                  <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>現在出品中の馬はありません</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {auctions.map(a => (
-                      <div key={a.id} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <strong style={{ color: '#d97706', fontSize: '14px' }}>🐎 {a.horse_name}</strong>
-                          <div style={{ fontSize: '11px', color: '#64748b' }}>出品者: {a.seller_name} / 最高額: {(a.current_bid || 0).toLocaleString()}G ({a.highest_bidder})</div>
-                        </div>
-                        <button onClick={() => handleForceCancelAuction(a.id, a.horse_name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>
-                          強制削除 🗑️
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* 🏆 TAB: 着順確定 ＆ 確定取り消し ＆ 🎙️ AI自動実況 */}
-          {adminTab === 'settle' && (
-            <div style={{ border: '2px solid #2563eb', padding: '20px', borderRadius: '16px', backgroundColor: '#ffffff' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h3 style={{ color: '#1e3a8a', margin: 0, fontWeight: 'bold', fontSize: '18px' }}>
-                  🏆 【{selectedRaceNo}R】 着順確定（1着〜9着） ＆ AI自動実況
-                </h3>
-                
-                <button
-                  onClick={handleUnsettleRace}
-                  style={{ backgroundColor: '#ca8a04', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
-                >
-                  🔄 【{selectedRaceNo}R】確定取り消し
-                </button>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginBottom: '20px' }}>
-                <div><label style={{ fontSize: '11px', color: '#dc2626', fontWeight: 'bold', display: 'block' }}>🥇 1着 (必須)</label><select value={rank1} onChange={e=>setRank1(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
-                <div><label style={{ fontSize: '11px', color: '#2563eb', fontWeight: 'bold', display: 'block' }}>🥈 2着</label><select value={rank2} onChange={e=>setRank2(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
-                <div><label style={{ fontSize: '11px', color: '#ca8a04', fontWeight: 'bold', display: 'block' }}>🥉 3着</label><select value={rank3} onChange={e=>setRank3(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
-                <div><label style={labelStyle}>4着</label><select value={rank4} onChange={e=>setRank4(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
-                <div><label style={labelStyle}>5着</label><select value={rank5} onChange={e=>setRank5(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
-                <div><label style={labelStyle}>6着</label><select value={rank6} onChange={e=>setRank6(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
-              </div>
-
-              <button 
-                onClick={handleSettleFullRace} 
-                style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '16px', fontSize: '16px', fontWeight: 'bold', borderRadius: '10px', cursor: 'pointer' }}
-              >
-                🏁 結果確定・配当自動振込 ＆ AI自動実況Discord速報 🎙️
-              </button>
-            </div>
-          )}
-
-          {/* 📢 TAB: アプデ・お知らせ配信 */}
+          {/* 📢 アプデ配信 */}
           {adminTab === 'news_edit' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
               <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>
@@ -1562,6 +1613,95 @@ ${aiDigest}
                   全プレイヤー ＆ Discordに一斉配信 📢
                 </button>
               </form>
+            </div>
+          )}
+
+          {/* 💬 チャット管理 */}
+          {adminTab === 'chat_admin' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
+              <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>
+                💬 パドック雑談チャット リアルタイム監視＆削除
+              </h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {chatMessages.length === 0 ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>投稿はありません</div>
+                ) : (
+                  chatMessages.map(m => (
+                    <div key={m.id} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 'bold', color: '#1e3a8a', fontSize: '13px' }}>👤 {m.discord_name}</div>
+                        <div style={{ fontSize: '13px', color: '#334155', marginTop: '2px' }}>{m.content}</div>
+                      </div>
+                      <button onClick={() => handleDeleteChatMessage(m.id)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
+                        削除 🗑️
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 📝 テキスト一括 */}
+          {adminTab === 'bulk_import' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
+              <h2 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>
+                📝 出走馬テキスト爆速一括登録
+              </h2>
+              <p style={{ color: '#64748b', fontSize: '12px', marginBottom: '12px' }}>
+                `馬番, 馬名, 騎手, 年齢` で貼り付けて一括登録！
+              </p>
+
+              <div style={{ marginBottom: '12px' }}>
+                <label style={labelStyle}>対象レース</label>
+                <select value={selectedRaceNo} onChange={e => setSelectedRaceNo(Number(e.target.value))} style={inputStyle}>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map(no => (
+                    <option key={no} value={no}>{no}R ({races.find(r=>r.race_number===no)?.title || '未設定'})</option>
+                  ))}
+                </select>
+              </div>
+
+              <textarea
+                rows={6}
+                placeholder="1, カマクラドリーム, 武豊, 3&#10;2, ツガルキング, ルメール, 4"
+                value={bulkImportText}
+                onChange={e => setBulkImportText(e.target.value)}
+                style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '13px', resize: 'vertical', marginBottom: '12px' }}
+              />
+
+              <button onClick={handleBulkImportHorses} style={{ width: '100%', padding: '14px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+                【{selectedRaceNo}R】に一括登録 📝
+              </button>
+            </div>
+          )}
+
+          {/* 📊 プール監視 */}
+          {adminTab === 'pool_monitor' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h2 style={{ margin: 0, color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>📊 総プール＆偏り監視</h2>
+                <button onClick={fetchAllBets} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🔄 更新</button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map(no => {
+                  const r = races.find(race => race.race_number === no);
+                  const raceBets = allBets.filter(b => String(b.race_id) === String(r?.id));
+                  const totalG = raceBets.reduce((sum, b) => sum + Number(b.amount || 0), 0);
+
+                  return (
+                    <div key={no} style={{ backgroundColor: '#f8fafc', padding: '12px 16px', borderRadius: '10px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#1e3a8a' }}>【{no}R】{r?.title || '未設定'}</span>
+                        <div style={{ fontSize: '11px', color: '#64748b' }}>件数: {raceBets.length}件</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <strong style={{ fontSize: '16px', color: '#16a34a', fontWeight: '900' }}>{totalG.toLocaleString()} G</strong>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
