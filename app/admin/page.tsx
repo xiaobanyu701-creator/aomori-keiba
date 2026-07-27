@@ -6,7 +6,7 @@ import Link from 'next/link';
 
 export default function SuperAdminConsole() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [pinInput, setPinInput] = useState('');
 
   const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit' | 'news_edit' | 'pedigree_admin' | 'chat_admin' | 'auction_admin' | 'bulk_import' | 'pool_monitor' | 'race_requests_admin'>('users');
 
@@ -25,10 +25,14 @@ export default function SuperAdminConsole() {
   const [addHorseMasterName, setAddHorseMasterName] = useState('');
   const [addHorseMasterOwner, setAddHorseMasterOwner] = useState('');
 
+  const [assignTargetHorseId, setAssignTargetHorseId] = useState<string>('');
+  const [assignTargetOwnerName, setAssignTargetOwnerName] = useState<string>('');
+
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [customBalanceInput, setCustomBalanceInput] = useState<string>('');
   const [amountToAddInput, setAmountToAddInput] = useState<number>(1000000);
+  const [customPinInput, setCustomPinInput] = useState<string>('');
   const [customTitleInput, setCustomTitleInput] = useState<string>('万馬券ハンター');
 
   const [breedEditOwnerName, setBreedEditOwnerName] = useState<string>('');
@@ -69,32 +73,6 @@ export default function SuperAdminConsole() {
   const [rank7, setRank7] = useState('');
   const [rank8, setRank8] = useState('');
   const [rank9, setRank9] = useState('');
-
-  // 👑 1. Discord ログイン状態 & 管理者判定チェック（暗証番号不要化）
-  useEffect(() => {
-    const checkAdminAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
-        setIsAuthenticated(false);
-        return;
-      }
-
-      setCurrentUser(user);
-
-      // 管理者Discordユーザー名リスト
-      const adminDiscordNames = ['yuzenfn']; // 👑 yuzenfn 様を設定済み
-      const discordUsername = user.user_metadata?.full_name || user.user_metadata?.name || user.user_metadata?.preferred_username;
-
-      if (adminDiscordNames.includes(discordUsername)) {
-        setIsAuthenticated(true);
-      } else {
-        setIsAuthenticated(false);
-      }
-    };
-
-    checkAdminAuth();
-  }, []);
 
   // 🤖 Discord WebHook 自動送信処理
   const sendDiscordNotification = async (title: string, description: string, color: number = 0x1e3a8a) => {
@@ -163,6 +141,7 @@ export default function SuperAdminConsole() {
       if (target) {
         setSelectedUser(target);
         setCustomBalanceInput((target.balance || 0).toString());
+        setCustomPinInput(target.pin_code || '');
         setCustomTitleInput(target.title || '万馬券ハンター');
       }
     } else {
@@ -176,18 +155,14 @@ export default function SuperAdminConsole() {
     }
   }, [breedEditOwnerName]);
 
-  const handleDiscordSignIn = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'discord',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-  };
-
   const loadOwnerBredHorses = async (ownerName: string) => {
-    const { data } = await supabase.from('horse_masters').select('*').eq('owner_name', ownerName);
-    if (data) setUserBredHorses(data);
+    const { data } = await supabase
+      .from('horse_masters')
+      .select('*')
+      .eq('owner_name', ownerName);
+    if (data) {
+      setUserBredHorses(data);
+    }
   };
 
   const fetchRaces = async () => {
@@ -211,6 +186,7 @@ export default function SuperAdminConsole() {
       setUsers(reversed);
       if (reversed.length > 0) {
         if (!selectedUserId) setSelectedUserId(reversed[0].id);
+        if (!assignTargetOwnerName) setAssignTargetOwnerName(reversed[0].discord_name);
         if (!breedEditOwnerName) setBreedEditOwnerName(reversed[0].discord_name);
       }
     }
@@ -229,6 +205,7 @@ export default function SuperAdminConsole() {
     if (data) {
       setHorseMasterList(data);
       if (data.length > 0 && !newHorseName) setNewHorseName(data[0].name);
+      if (data.length > 0 && !assignTargetHorseId) setAssignTargetHorseId(data[0].id);
     }
   };
 
@@ -264,9 +241,13 @@ export default function SuperAdminConsole() {
 
     if (!raceId) {
       const { data: insertedRace } = await supabase.from('races').insert([{
-        race_number: req.target_race_no, title: `${req.target_race_no}R 特別競走`, status: 'open',
+        race_number: req.target_race_no,
+        title: `${req.target_race_no}R 特別競走`,
+        status: 'open',
       }]).select('*');
-      if (insertedRace && insertedRace.length > 0) raceId = insertedRace[0].id;
+      if (insertedRace && insertedRace.length > 0) {
+        raceId = insertedRace[0].id;
+      }
     }
 
     if (!raceId) return alert('レース情報の取得に失敗しました');
@@ -275,7 +256,11 @@ export default function SuperAdminConsole() {
     const nextHorseNo = (exHorses?.length || 0) + 1;
 
     await supabase.from('horses').insert([{
-      race_id: raceId, horse_number: nextHorseNo, name: req.horse_name, jockey: req.preferred_jockey, age: 3,
+      race_id: raceId,
+      horse_number: nextHorseNo,
+      name: req.horse_name,
+      jockey: req.preferred_jockey,
+      age: 3,
     }]);
 
     await supabase.from('horse_masters').update({ status: `出走(${req.target_race_no}R)` }).eq('name', req.horse_name);
@@ -287,7 +272,7 @@ export default function SuperAdminConsole() {
       0x16a34a
     );
 
-    alert(`🟢 「${req.horse_name}」を 【${req.target_race_no}R ${nextHorseNo}番】 に自動登録しました！`);
+    alert(`🟢 「${req.horse_name}」を 【${req.target_race_no}R ${nextHorseNo}番 (騎手: ${req.preferred_jockey})】 に自動登録しました！`);
     fetchRaceRequests(); fetchRaces();
   };
 
@@ -312,17 +297,19 @@ export default function SuperAdminConsole() {
       sendDiscordNotification('🔒 全レース 投票一括締め切り', '本日全レースの投票受付が終了しました！発走までしばらくお待ちください。', 0xdc2626);
     }
 
-    alert(`⚡ 1R〜12Rすべてを【 ${label} 】に一括変更しました！`); fetchRaces();
+    alert(`⚡ 1R〜12Rすべてを【 ${label} 】に一括変更しました！`);
+    fetchRaces();
   };
 
   const handleResetAllRaces = async () => {
-    if (!confirm('⚠️ 警告: 全レースの出走馬・投票データをリセットしますか？')) return;
+    if (!confirm('⚠️ 警告: 1R〜12Rのすべての「出走馬」「投票データ」「着順確定」をまっ散らにリセットしますか？')) return;
     await supabase.from('horses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     await supabase.from('bets').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     for (const r of races) {
       await supabase.from('races').update({ status: 'open', first_horse: null, second_horse: null, third_horse: null }).eq('id', r.id);
     }
-    alert('🧹 全12Rの開催データをリセットしました！'); fetchRaces(); fetchAllBets();
+    alert('🧹 全12Rの開催データをまっ散らにリセットしました！');
+    fetchRaces(); fetchAllBets();
   };
 
   const handleBulkImportHorses = async () => {
@@ -339,13 +326,20 @@ export default function SuperAdminConsole() {
         const jockey = parts[2] || 'ルメール';
         const age = Number(parts[3]) || 3;
 
-        await supabase.from('horses').insert([{ race_id: currentRace.id, horse_number: hNo, name, jockey, age }]);
+        await supabase.from('horses').insert([{
+          race_id: currentRace.id,
+          horse_number: hNo,
+          name: name,
+          jockey: jockey,
+          age: age,
+        }]);
         count++;
       }
     }
 
-    alert(`🎉 【${selectedRaceNo}R】に ${count}頭 の出走馬を一括登録しました！`);
-    setBulkImportText(''); fetchHorses(currentRace.id);
+    alert(`🎉 【${selectedRaceNo}R】に ${count}頭 の出走馬をテキストから一括登録しました！`);
+    setBulkImportText('');
+    fetchHorses(currentRace.id);
   };
 
   const handleUpdateRaceInfo = async (e: React.FormEvent) => {
@@ -353,7 +347,14 @@ export default function SuperAdminConsole() {
     if (!editTitle.trim()) return alert('レース名を入力してください');
 
     const racePayload = {
-      race_number: selectedRaceNo, title: editTitle, distance_m: editDistance, track_condition: editCondition, weather: editWeather, prize: editPrize, grade: editGrade, status: currentRace?.status || 'open',
+      race_number: selectedRaceNo,
+      title: editTitle,
+      distance_m: editDistance,
+      track_condition: editCondition,
+      weather: editWeather,
+      prize: editPrize,
+      grade: editGrade,
+      status: currentRace?.status || 'open',
     };
 
     if (currentRace?.id) {
@@ -362,7 +363,8 @@ export default function SuperAdminConsole() {
       await supabase.from('races').insert([racePayload]);
     }
 
-    alert(`🎉 【${selectedRaceNo}R】 の条件設定を保存しました！`); fetchRaces();
+    alert(`🎉 【${selectedRaceNo}R】 のレース名を「${editTitle}」へ変更・保存しました！`);
+    fetchRaces();
   };
 
   const handleAddOfficialAuction = async (e: React.FormEvent) => {
@@ -370,7 +372,14 @@ export default function SuperAdminConsole() {
     if (!officialHorseName) return alert('馬名を入力してください');
 
     await supabase.from('auctions').insert([
-      { horse_name: officialHorseName, seller_name: '青森県競馬運営公式', current_bid: officialStartPrice, highest_bidder: 'なし', is_official: true, status: 'active' },
+      {
+        horse_name: officialHorseName,
+        seller_name: '青森県競馬運営公式',
+        current_bid: officialStartPrice,
+        highest_bidder: 'なし',
+        is_official: true,
+        status: 'active',
+      },
     ]);
 
     sendDiscordNotification(
@@ -379,7 +388,8 @@ export default function SuperAdminConsole() {
       0xd97706
     );
 
-    alert(`👑 セレクトセールに「${officialHorseName}」を出品しました！`); setOfficialHorseName('');
+    alert(`👑 運営公式セレクトセールに「${officialHorseName}」を出品しました！`);
+    setOfficialHorseName('');
   };
 
   const handleSaveTrainingRates = () => {
@@ -392,31 +402,50 @@ export default function SuperAdminConsole() {
     if (!selectedUser) return;
     await supabase.from('users').update({ title: customTitleInput }).eq('id', selectedUser.id);
     
-    sendDiscordNotification('🎖️ 栄誉ある称号授与！', `**${selectedUser.discord_name}** 様に限定称号 **【 ${customTitleInput} 】** が与えられました！`, 0xca8a04);
-    alert(`🎖️ 「${selectedUser.discord_name}」様に称号【 ${customTitleInput} 】を授与しました！`); fetchUsers();
+    sendDiscordNotification(
+      '🎖️ 栄誉ある称号授与！',
+      `**${selectedUser.discord_name}** 様に限定称号 **【 ${customTitleInput} 】** が与えられました！`,
+      0xca8a04
+    );
+
+    alert(`🎖️ 「${selectedUser.discord_name}」様に称号【 ${customTitleInput} 】を授与しました！`);
+    fetchUsers();
   };
 
   const handleAutoAssignMarks = async () => {
     const marks = ['◎', '○', '▲', '△', '×'];
     for (let i = 0; i < horses.length; i++) {
-      await supabase.from('horses').update({ mark: marks[i] || '・' }).eq('id', horses[i].id);
+      const mark = marks[i] || '・';
+      await supabase.from('horses').update({ mark: mark }).eq('id', horses[i].id);
     }
-    alert('🗞️ 予想印（◎○▲△）を自動設定しました！');
+    alert('🗞️ 競馬新聞の予想印（◎○▲△）を自動設定しました！');
     if (currentRace?.id) fetchHorses(currentRace.id);
   };
 
   const handleDeleteChatMessage = async (id: string) => {
-    if (!confirm('この投稿を削除しますか？')) return;
-    await supabase.from('inquiries').delete().eq('id', id); fetchChat();
+    if (!confirm('この不適切な投稿を削除しますか？')) return;
+    await supabase.from('inquiries').delete().eq('id', id);
+    const local = JSON.parse(localStorage.getItem('app_paddock_chat') || '[]');
+    const filtered = local.filter((m: any) => m.id !== id);
+    localStorage.setItem('app_paddock_chat', JSON.stringify(filtered));
+    fetchChat();
   };
 
   const handleAddNews = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newsTitle || !newsContent) return alert('入力してください');
+    if (!newsTitle || !newsContent) return alert('タイトルと本文を入力してください');
 
-    await supabase.from('news').insert([{ title: newsTitle, content: newsContent, date: new Date().toLocaleDateString() }]);
-    sendDiscordNotification(`📢 【アプデ・お知らせ】 ${newsTitle}`, newsContent, 0x2563eb);
-    setNewsTitle(''); setNewsContent(''); alert('📢 アプデ・お知らせを配信しました！'); fetchNews();
+    const newNews = { title: newsTitle, content: newsContent, date: new Date().toLocaleDateString() };
+    await supabase.from('news').insert([newNews]);
+
+    sendDiscordNotification(
+      `📢 【アプデ・お知らせ】 ${newsTitle}`,
+      newsContent,
+      0x2563eb
+    );
+
+    setNewsTitle(''); setNewsContent('');
+    alert('📢 アプデ・お知らせを配信しました！'); fetchNews();
   };
 
   const handleUpdateBredHorseDetail = async (horseId: string, field: string, value: any) => {
@@ -426,27 +455,34 @@ export default function SuperAdminConsole() {
 
   const handleDeleteBredHorse = async (horseId: string, horseName: string) => {
     if (!confirm(`「${horseName}」を完全に削除しますか？`)) return;
-    await supabase.from('horse_masters').delete().eq('id', horseId); loadOwnerBredHorses(breedEditOwnerName);
+    await supabase.from('horse_masters').delete().eq('id', horseId);
+    loadOwnerBredHorses(breedEditOwnerName); alert(`🗑️ 「${horseName}」を削除しました。`);
   };
 
   const handleSetUserBalance = async () => {
     if (!selectedUser) return;
     const newBal = Number(customBalanceInput);
     await supabase.from('users').update({ balance: newBal }).eq('id', selectedUser.id);
-    alert(`💰 残高を ${newBal.toLocaleString()} G に変更しました！`); fetchUsers();
+    alert(`💰 「${selectedUser.discord_name}」様の残高を ${newBal.toLocaleString()} G に変更しました！`); fetchUsers();
   };
 
   const handleAddUserBalance = async (amount: number) => {
     if (!selectedUser) return;
-    const newBal = (selectedUser.balance || 0) + amount;
+    const currentBal = selectedUser.balance || 0;
+    const newBal = currentBal + amount;
     await supabase.from('users').update({ balance: newBal }).eq('id', selectedUser.id);
-    alert(`🎉 ${amount.toLocaleString()} G を追加しました！`); fetchUsers();
+    alert(`🎉 「${selectedUser.discord_name}」様に ${amount.toLocaleString()} G を追加しました！`); fetchUsers();
   };
 
-  const handleDeleteUser = async () => {
-    if (!selectedUser || !confirm(`⚠️ 「${selectedUser.discord_name}」様のアカウントを削除しますか？`)) return;
-    await supabase.from('users').delete().eq('id', selectedUser.id);
-    alert('🗑️ 削除しました'); setSelectedUserId(''); fetchUsers();
+  const handleDeleteUser = async (userId?: string, userName?: string) => {
+    const targetId = userId || selectedUser?.id;
+    const targetName = userName || selectedUser?.discord_name;
+    if (!targetId) return;
+    if (!confirm(`⚠️ 本当に「${targetName}」様のアカウントを削除しますか？`)) return;
+
+    await supabase.from('users').delete().eq('id', targetId);
+    alert(`🗑️ 「${targetName}」様を削除しました。`);
+    if (targetId === selectedUserId) setSelectedUserId(''); fetchUsers();
   };
 
   const handleAddHorseMaster = async (e: React.FormEvent) => {
@@ -462,7 +498,7 @@ export default function SuperAdminConsole() {
   };
 
   const handleToggleRestingStatus = async (horseId: string, currentStatus: string) => {
-    const nextStatus = currentStatus === '放牧中' ? '現役' : '放牧中';
+    let nextStatus = currentStatus === '放牧中' ? '現役' : '放牧中';
     await supabase.from('horse_masters').update({ status: nextStatus }).eq('id', horseId);
     alert(`🔄 ステータスを「${nextStatus}」に変更しました！`); fetchHorseMasters();
   };
@@ -471,15 +507,19 @@ export default function SuperAdminConsole() {
     e.preventDefault();
     if (!currentRace || !newHorseName) return alert('馬名を選択してください');
 
-    await supabase.from('horses').insert([{
+    const { error } = await supabase.from('horses').insert([{
       race_id: currentRace.id, horse_number: newHorseNumber, name: newHorseName, age: newHorseAge, jockey: newJockey
     }]);
+
+    if (error) {
+      await supabase.from('horses').insert([{ race_id: currentRace.id, horse_number: newHorseNumber, name: newHorseName }]);
+    }
 
     await supabase.from('horse_masters').update({ status: `出走(${selectedRaceNo}R)` }).eq('name', newHorseName);
     fetchHorses(currentRace.id); fetchHorseMasters(); alert(`🎉 出走登録しました！`);
   };
 
-  const handleDeleteHorse = async (horseId: string) => {
+  const handleDeleteHorse = async (horseId: string, name: string) => {
     if (!confirm('削除しますか？')) return;
     await supabase.from('horses').delete().eq('id', horseId);
     if (currentRace?.id) fetchHorses(currentRace.id);
@@ -490,10 +530,10 @@ export default function SuperAdminConsole() {
     if (currentRace?.id) fetchHorses(currentRace.id);
   };
 
-  // 🏁 着順確定 ＆ 自動清算 ＆ Discord速報
+  // 🏁 着順確定 ＆ 配当金清算 ＆ Discord自動速報
   const handleSettleFullRace = async () => {
-    if (!currentRace || !rank1) return alert('1着の馬を選択してください');
-    if (!confirm(`【${selectedRaceNo}R】の結果を確定し、配当金を自動振込＆Discordへ速報送信しますか？`)) return;
+    if (!currentRace || !rank1) return alert('最低限1着の馬を選択してください');
+    if (!confirm(`【${selectedRaceNo}R】の結果を確定し、的中者全員へ配当金を自動振込＆Discordへ速報を送信しますか？`)) return;
 
     const h1 = horses.find(h => String(h.horse_number) === String(rank1));
     const h2 = horses.find(h => String(h.horse_number) === String(rank2));
@@ -503,19 +543,42 @@ export default function SuperAdminConsole() {
 
     if (bets && bets.length > 0) {
       for (const bet of bets) {
-        let isWin = false; let winOdds = 3.5; const sel = String(bet.selection);
+        let isWin = false;
+        let winOdds = 3.5;
+        const sel = String(bet.selection);
 
-        if (bet.bet_type === '単勝' && sel === rank1) { isWin = true; winOdds = 3.5; }
-        else if (bet.bet_type === '複勝' && [rank1, rank2, rank3].filter(Boolean).includes(sel)) { isWin = true; winOdds = 1.8; }
-        else if (bet.bet_type === '馬単' && sel === `${rank1}-${rank2}`) { isWin = true; winOdds = 15.0; }
-        else if (bet.bet_type === '馬連' && (sel === `${rank1}-${rank2}` || sel === `${rank2}-${rank1}`)) { isWin = true; winOdds = 8.5; }
+        if (bet.bet_type === '単勝' && sel === rank1) {
+          isWin = true; winOdds = 3.5;
+        } else if (bet.bet_type === '複勝' && [rank1, rank2, rank3].filter(Boolean).includes(sel)) {
+          isWin = true; winOdds = 1.8;
+        } else if (bet.bet_type === '馬単' && sel === `${rank1}-${rank2}`) {
+          isWin = true; winOdds = 15.0;
+        } else if (bet.bet_type === '馬連' && (sel === `${rank1}-${rank2}` || sel === `${rank2}-${rank1}`)) {
+          isWin = true; winOdds = 8.5;
+        } else if (bet.bet_type === 'ワイド') {
+          const pair = sel.split('-');
+          const top3 = [rank1, rank2, rank3].filter(Boolean);
+          if (pair.length === 2 && top3.includes(pair[0]) && top3.includes(pair[1])) {
+            isWin = true; winOdds = 3.2;
+          }
+        } else if (bet.bet_type === '3連複') {
+          const trio = sel.split('-');
+          const top3 = [rank1, rank2, rank3].filter(Boolean);
+          if (trio.length === 3 && trio.every(h => top3.includes(h))) {
+            isWin = true; winOdds = 22.0;
+          }
+        } else if (bet.bet_type === '3連単' && sel === `${rank1}-${rank2}-${rank3}`) {
+          isWin = true; winOdds = 65.0;
+        }
 
         if (isWin) {
           const payout = Math.floor(Number(bet.amount) * winOdds);
           await supabase.from('bets').update({ payout_amount: payout, is_claimed: true }).eq('id', bet.id);
+
           const { data: userData } = await supabase.from('users').select('balance').eq('id', bet.user_id);
           if (userData && userData.length > 0) {
-            await supabase.from('users').update({ balance: Number(userData[0].balance || 0) + payout }).eq('id', bet.user_id);
+            const currentBal = Number(userData[0].balance || 0);
+            await supabase.from('users').update({ balance: currentBal + payout }).eq('id', bet.user_id);
           }
         } else {
           await supabase.from('bets').update({ payout_amount: 0, is_claimed: true }).eq('id', bet.id);
@@ -523,35 +586,63 @@ export default function SuperAdminConsole() {
       }
     }
 
+    const rankSelections = [rank1, rank2, rank3, rank4, rank5, rank6, rank7, rank8, rank9];
+    for (let i = 0; i < rankSelections.length; i++) {
+      const horseNo = rankSelections[i];
+      if (horseNo) {
+        const hObj = horses.find(h => String(h.horse_number) === String(horseNo));
+        if (hObj) {
+          try {
+            await supabase.from('horse_results').insert([{
+              horse_name: hObj.name,
+              race_name: `${selectedRaceNo}R ${currentRace.title || ''}`,
+              rank_result: i + 1,
+              jockey: hObj.jockey || 'ルメール',
+            }]);
+          } catch(e){}
+        }
+      }
+    }
+
     await supabase.from('races').update({ 
-      status: 'finished', first_horse: rank1, second_horse: rank2, third_horse: rank3, rank4, rank5, rank6, rank7, rank8, rank9
+      status: 'finished', 
+      first_horse: rank1, second_horse: rank2, third_horse: rank3, rank4, rank5, rank6, rank7, rank8, rank9
     }).eq('id', currentRace.id);
 
-    const desc = `🥇 **1着:** ${rank1}番 ${h1 ? h1.name : ''}\n🥈 **2着:** ${rank2 ? `${rank2}番 ${h2 ? h2.name : ''}` : '-'}\n🥉 **3着:** ${rank3 ? `${rank3}番 ${h3 ? h3.name : ''}` : '-'}\n\n🎯 的中された皆様おめでとうございます！配当金が各口座へ自動振込されました！`;
+    // 🤖 Discord速報メッセージ送信
+    const desc = `
+🥇 **1着:** ${rank1}番 ${h1 ? h1.name : ''}
+🥈 **2着:** ${rank2 ? `${rank2}番 ${h2 ? h2.name : ''}` : '-'}
+🥉 **3着:** ${rank3 ? `${rank3}番 ${h3 ? h3.name : ''}` : '-'}
+
+💰 **払戻金（概算）**
+・単勝: 350 G
+・馬単: 1,500 G
+・3連単: 6,500 G
+
+🎯 的中された皆様おめでとうございます！配当金が各口座へ自動振込されました！
+`;
     sendDiscordNotification(`🏆 【${selectedRaceNo}R ${currentRace.title || '特別競走'}】 レース確定速報！`, desc, 0x16a34a);
 
-    alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！`); fetchRaces(); fetchUsers(); fetchHorseMasters();
+    alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！\nDiscordへの結果速報も自動送信されました！`); 
+    fetchRaces(); fetchUsers(); fetchHorseMasters();
   };
 
-  // 🔒 認証されていない場合画面
+  const handleAdminLogin = (e: React.FormEvent) => { 
+    e.preventDefault(); 
+    if (pinInput === '0302') setIsAuthenticated(true); 
+    else alert('暗証番号が違います'); 
+  };
+
   if (!isAuthenticated) return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f1f5f9' }}>
-      <div style={{ backgroundColor: '#ffffff', padding: '40px 24px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)', textAlign: 'center', maxWidth: '400px', width: '100%' }}>
-        <h2 style={{ color: '#1e3a8a', margin: '0 0 10px 0', fontSize: '20px', fontWeight: 'bold' }}>🍏 管理者アクセス</h2>
-        <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>
-          Discordの管理者アカウント（yuzenfn）でログインすると、暗証番号なしでアクセスできます。
-        </p>
-
-        <button
-          onClick={handleDiscordSignIn}
-          style={{ width: '100%', padding: '14px', backgroundColor: '#5865F2', color: '#fff', fontWeight: 'bold', fontSize: '15px', border: 'none', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-        >
-          🎮 Discordアカウントで認証
-        </button>
-
-        <div style={{ marginTop: '20px' }}>
-          <Link href="/" style={{ color: '#2563eb', fontSize: '13px', textDecoration: 'none', fontWeight: 'bold' }}>← トップ画面へ戻る</Link>
-        </div>
+      <div style={{ backgroundColor: '#ffffff', padding: '40px 20px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05)', textAlign: 'center', maxWidth: '380px', width: '100%' }}>
+        <h2 style={{ color: '#1e3a8a', margin: '0 0 20px 0', fontSize: '20px', fontWeight: 'bold' }}>🍏 運営管理者ログイン</h2>
+        <form onSubmit={handleAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <input type="password" value={pinInput} onChange={e=>setPinInput(e.target.value)} placeholder="暗証番号を入力" style={{ padding: '14px', fontSize: '18px', textAlign: 'center', borderRadius: '10px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', letterSpacing: '6px' }} />
+          <button type="submit" style={{ padding: '14px', backgroundColor: '#1e3a8a', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '10px', cursor: 'pointer' }}>ログイン</button>
+        </form>
+        <div style={{ marginTop: '16px' }}><Link href="/" style={{ color: '#2563eb', fontSize: '13px', textDecoration: 'none', fontWeight: 'bold' }}>← ユーザー画面に戻る</Link></div>
       </div>
     </div>
   );
@@ -610,24 +701,40 @@ export default function SuperAdminConsole() {
                 <h2 style={{ margin: 0, color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
                   📨 出走 ＆ 騎手 申請リスト ({raceRequests.length}件)
                 </h2>
-                <button onClick={fetchRaceRequests} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🔄 更新</button>
+                <button onClick={fetchRaceRequests} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                  🔄 更新
+                </button>
               </div>
 
               {raceRequests.length === 0 ? (
-                <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>現在未処理の出走申請はありません。</div>
+                <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+                  現在未処理の出走申請はありません。
+                </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {raceRequests.map(req => (
                     <div key={req.id} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ backgroundColor: '#1e3a8a', color: '#fff', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px' }}>【{req.target_race_no}R】</span>
-                        <span style={{ fontWeight: 'bold', fontSize: '16px', color: '#16a34a' }}>🐎 {req.horse_name}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ backgroundColor: '#1e3a8a', color: '#fff', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px' }}>
+                            【{req.target_race_no}R】
+                          </span>
+                          <span style={{ fontWeight: 'bold', fontSize: '16px', color: '#16a34a' }}>🐎 {req.horse_name}</span>
+                        </div>
                         <span style={{ fontSize: '12px', color: '#475569' }}>馬主: {req.owner_name}</span>
                       </div>
-                      <div style={{ fontSize: '13px', color: '#2563eb', fontWeight: 'bold' }}>希望騎手: 🏇 {req.preferred_jockey}</div>
+
+                      <div style={{ fontSize: '13px', color: '#2563eb', fontWeight: 'bold' }}>
+                        希望騎手: 🏇 {req.preferred_jockey}
+                      </div>
+
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={() => handleApproveRaceRequest(req)} style={{ flex: 1, padding: '10px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>承認・自動登録 🟢</button>
-                        <button onClick={() => handleRejectRaceRequest(req)} style={{ padding: '10px 14px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>拒否 🔴</button>
+                        <button onClick={() => handleApproveRaceRequest(req)} style={{ flex: 1, padding: '10px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
+                          承認・自動登録 🟢
+                        </button>
+                        <button onClick={() => handleRejectRaceRequest(req)} style={{ padding: '10px 14px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
+                          拒否 🔴
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -639,16 +746,22 @@ export default function SuperAdminConsole() {
           {/* 💬 TAB: パドックチャット管理 */}
           {adminTab === 'chat_admin' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
-              <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>💬 パドック雑談チャット リアルタイム監視＆削除</h2>
+              <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>
+                💬 パドック雑談チャット リアルタイム監視＆削除
+              </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {chatMessages.length === 0 ? <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>投稿はありません</div> : (
+                {chatMessages.length === 0 ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>投稿はありません</div>
+                ) : (
                   chatMessages.map(m => (
                     <div key={m.id} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <div style={{ fontWeight: 'bold', color: '#1e3a8a', fontSize: '13px' }}>👤 {m.discord_name}</div>
                         <div style={{ fontSize: '13px', color: '#334155', marginTop: '2px' }}>{m.content}</div>
                       </div>
-                      <button onClick={() => handleDeleteChatMessage(m.id)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>削除 🗑️</button>
+                      <button onClick={() => handleDeleteChatMessage(m.id)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
+                        削除 🗑️
+                      </button>
                     </div>
                   ))
                 )}
@@ -663,13 +776,19 @@ export default function SuperAdminConsole() {
               <div style={{ marginBottom: '16px' }}>
                 <label style={labelStyle}>確認・編集したい馬主を選択</label>
                 <select value={breedEditOwnerName} onChange={e => setBreedEditOwnerName(e.target.value)} style={{ padding: '10px', borderRadius: '8px', border: '2px solid #16a34a', fontSize: '14px', fontWeight: 'bold', backgroundColor: '#f0fdf4', width: '100%' }}>
-                  {users.map(u => <option key={u.id} value={u.discord_name}>👤 {u.discord_name} 様の生産所有馬</option>)}
+                  {users.map(u => (
+                    <option key={u.id} value={u.discord_name}>👤 {u.discord_name} 様の生産所有馬</option>
+                  ))}
                 </select>
               </div>
 
-              <h3 style={{ margin: '16px 0 10px 0', color: '#1e3a8a', fontSize: '15px', fontWeight: 'bold' }}>🐎 【{breedEditOwnerName}】 様の生産馬 ({userBredHorses.length}頭)</h3>
+              <h3 style={{ margin: '16px 0 10px 0', color: '#1e3a8a', fontSize: '15px', fontWeight: 'bold' }}>
+                🐎 【{breedEditOwnerName}】 様の生産馬 ({userBredHorses.length}頭)
+              </h3>
 
-              {userBredHorses.length === 0 ? <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '10px' }}>生産馬はありません</div> : (
+              {userBredHorses.length === 0 ? (
+                <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '10px' }}>生産馬はありません</div>
+              ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {userBredHorses.map(h => (
                     <div key={h.id} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
@@ -678,6 +797,7 @@ export default function SuperAdminConsole() {
                         <div><label style={labelStyle}>素質</label><select value={h.rank || 'C'} onChange={e => handleUpdateBredHorseDetail(h.id, 'rank', e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#dc2626' }}>{['SS', 'S', 'A', 'B', 'C'].map(r => <option key={r} value={r}>{r}</option>)}</select></div>
                         <div><label style={labelStyle}>スピード</label><select value={h.speed || 'B'} onChange={e => handleUpdateBredHorseDetail(h.id, 'speed', e.target.value)} style={inputStyle}>{['S', 'A', 'B', 'C', 'D'].map(r => <option key={r} value={r}>{r}</option>)}</select></div>
                         <div><label style={labelStyle}>スタミナ</label><select value={h.stamina || 'B'} onChange={e => handleUpdateBredHorseDetail(h.id, 'stamina', e.target.value)} style={inputStyle}>{['S', 'A', 'B', 'C', 'D'].map(r => <option key={r} value={r}>{r}</option>)}</select></div>
+                        <div><label style={labelStyle}>根性</label><select value={h.guts || 'B'} onChange={e => handleUpdateBredHorseDetail(h.id, 'guts', e.target.value)} style={inputStyle}>{['S', 'A', 'B', 'C', 'D'].map(r => <option key={r} value={r}>{r}</option>)}</select></div>
                         <div style={{ textAlign: 'right', marginTop: '10px' }}><button onClick={() => handleDeleteBredHorse(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>削除</button></div>
                       </div>
                     </div>
@@ -725,15 +845,21 @@ export default function SuperAdminConsole() {
             </div>
           )}
 
-          {/* ⚡ 12R一括コントロール */}
+          {/* ⚡ 12R一括コントロール ＆ 開催リセット */}
           {adminTab === 'race' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '2px solid #2563eb' }}>
                 <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>⚡ 1R〜12R 一括状態コントロール</h3>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button onClick={() => handleBulkSetRaceStatus('open')} style={{ flex: 1, backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>🟢 全12R 受付開始</button>
-                  <button onClick={() => handleBulkSetRaceStatus('closed')} style={{ flex: 1, backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>🔒 全12R 投票締切</button>
-                  <button onClick={handleResetAllRaces} style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>🧹 開催クリア</button>
+                  <button onClick={() => handleBulkSetRaceStatus('open')} style={{ flex: 1, backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    🟢 全12R 受付開始
+                  </button>
+                  <button onClick={() => handleBulkSetRaceStatus('closed')} style={{ flex: 1, backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    🔒 全12R 投票締切
+                  </button>
+                  <button onClick={handleResetAllRaces} style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    🧹 開催クリア
+                  </button>
                 </div>
               </div>
 
@@ -745,15 +871,17 @@ export default function SuperAdminConsole() {
                     <label style={labelStyle}>レース名</label>
                     <input type="text" placeholder="例: 青森県ダービー" value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#1e3a8a' }} required />
                   </div>
+                  
                   <div>
                     <label style={labelStyle}>🏆 レース格付け</label>
-                    <select value={editGrade} onChange={e=>setEditGrade(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold' }}>
+                    <select value={editGrade} onChange={e=>setEditGrade(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: editGrade === 'G1' ? '#dc2626' : editGrade === 'G2' ? '#d97706' : '#2563eb' }}>
                       <option value="一般">一般競走</option>
                       <option value="G3">G3 重賞</option>
                       <option value="G2">G2 重賞</option>
                       <option value="G1">G1 最高峰競走</option>
                     </select>
                   </div>
+
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                     <div><label style={labelStyle}>距離 (m)</label><input type="number" step="100" value={editDistance} onChange={e=>setEditDistance(Number(e.target.value))} style={inputStyle} /></div>
                     <div><label style={labelStyle}>馬場</label><select value={editCondition} onChange={e=>setEditCondition(e.target.value)} style={inputStyle}><option value="良">良</option><option value="稍重">稍重</option><option value="重">重</option><option value="不良">不良</option></select></div>
@@ -763,7 +891,9 @@ export default function SuperAdminConsole() {
                     <label style={labelStyle}>💰 1着総賞金 (G)</label>
                     <input type="number" step="100000" value={editPrize} onChange={e=>setEditPrize(Number(e.target.value))} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }} />
                   </div>
-                  <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>設定を保存 💾</button>
+                  <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+                    設定を保存 💾
+                  </button>
                 </form>
               </div>
             </div>
@@ -776,18 +906,22 @@ export default function SuperAdminConsole() {
                 <h2 style={{ margin: 0, color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>📊 総プール＆偏り監視</h2>
                 <button onClick={fetchAllBets} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🔄 更新</button>
               </div>
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {Array.from({ length: 12 }, (_, i) => i + 1).map(no => {
                   const r = races.find(race => race.race_number === no);
                   const raceBets = allBets.filter(b => String(b.race_id) === String(r?.id));
                   const totalG = raceBets.reduce((sum, b) => sum + Number(b.amount || 0), 0);
+
                   return (
                     <div key={no} style={{ backgroundColor: '#f8fafc', padding: '12px 16px', borderRadius: '10px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#1e3a8a' }}>【{no}R】{r?.title || '未設定'}</span>
                         <div style={{ fontSize: '11px', color: '#64748b' }}>件数: {raceBets.length}件</div>
                       </div>
-                      <strong style={{ fontSize: '16px', color: '#16a34a', fontWeight: '900' }}>{totalG.toLocaleString()} G</strong>
+                      <div style={{ textAlign: 'right' }}>
+                        <strong style={{ fontSize: '16px', color: '#16a34a', fontWeight: '900' }}>{totalG.toLocaleString()} G</strong>
+                      </div>
                     </div>
                   );
                 })}
@@ -798,7 +932,13 @@ export default function SuperAdminConsole() {
           {/* 📝 出走馬テキスト一括登録 */}
           {adminTab === 'bulk_import' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
-              <h2 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>📝 出走馬テキスト爆速一括登録</h2>
+              <h2 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>
+                📝 出走馬テキスト爆速一括登録
+              </h2>
+              <p style={{ color: '#64748b', fontSize: '12px', marginBottom: '12px' }}>
+                `馬番, 馬名, 騎手, 年齢` で貼り付けて一括登録！
+              </p>
+
               <div style={{ marginBottom: '12px' }}>
                 <label style={labelStyle}>対象レース</label>
                 <select value={selectedRaceNo} onChange={e => setSelectedRaceNo(Number(e.target.value))} style={inputStyle}>
@@ -807,8 +947,18 @@ export default function SuperAdminConsole() {
                   ))}
                 </select>
               </div>
-              <textarea rows={6} placeholder="1, カマクラドリーム, 武豊, 3&#10;2, ツガルキング, ルメール, 4" value={bulkImportText} onChange={e => setBulkImportText(e.target.value)} style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '13px', resize: 'vertical', marginBottom: '12px' }} />
-              <button onClick={handleBulkImportHorses} style={{ width: '100%', padding: '14px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>【{selectedRaceNo}R】に一括登録 📝</button>
+
+              <textarea
+                rows={6}
+                placeholder="1, カマクラドリーム, 武豊, 3&#10;2, ツガルキング, ルメール, 4"
+                value={bulkImportText}
+                onChange={e => setBulkImportText(e.target.value)}
+                style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '13px', resize: 'vertical', marginBottom: '12px' }}
+              />
+
+              <button onClick={handleBulkImportHorses} style={{ width: '100%', padding: '14px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+                【{selectedRaceNo}R】に一括登録 📝
+              </button>
             </div>
           )}
 
@@ -817,11 +967,14 @@ export default function SuperAdminConsole() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div style={{ backgroundColor: '#ffffff', border: '2px solid #2563eb', borderRadius: '16px', padding: '20px' }}>
                 <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>👤 プレイヤー管理 ＆ 称号授与</h2>
+                
                 <div style={{ marginBottom: '16px' }}>
                   <label style={labelStyle}>操作するプレイヤーを選択</label>
                   <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '2px solid #2563eb', fontSize: '15px', fontWeight: 'bold', backgroundColor: '#eff6ff', width: '100%' }}>
                     {users.map(u => (
-                      <option key={u.id} value={u.id}>👤 {u.discord_name} (残高: {(u.balance || 0).toLocaleString()}G)</option>
+                      <option key={u.id} value={u.id}>
+                        👤 {u.discord_name} (残高: {(u.balance || 0).toLocaleString()}G)
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -836,15 +989,19 @@ export default function SuperAdminConsole() {
                         <button onClick={() => handleAddUserBalance(-amountToAddInput)} style={{ padding: '10px 14px', backgroundColor: '#ca8a04', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>➖ 減算</button>
                       </div>
                     </div>
+
                     <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: 0 }} />
+
                     <div>
-                      <h4 style={{ margin: '0 0 8px 0', color: '#ca8a04', fontSize: '14px' }}>🎖️ 限定称号を授与</h4>
+                      <h4 style={{ margin: '0 0 8px 0', color: '#ca8a04', fontSize: '14px' }}>🎖️ 限定称号を授与（Discordへ自動アナウンス）</h4>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <input type="text" placeholder="例: 万馬券ハンター" value={customTitleInput} onChange={e=>setCustomTitleInput(e.target.value)} style={inputStyle} />
                         <button onClick={handleUpdateUserTitle} style={{ padding: '10px 14px', backgroundColor: '#ca8a04', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '12px' }}>授与 🎖️</button>
                       </div>
                     </div>
+
                     <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: 0 }} />
+
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '10px', alignItems: 'end' }}>
                       <div>
                         <label style={labelStyle}>所持コイン（直接上書き）</label>
@@ -853,7 +1010,8 @@ export default function SuperAdminConsole() {
                           <button onClick={handleSetUserBalance} style={{ padding: '8px 12px', backgroundColor: '#2563eb', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>設定</button>
                         </div>
                       </div>
-                      <button onClick={handleDeleteUser} style={{ padding: '10px', backgroundColor: '#dc2626', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🗑️ ユーザー削除</button>
+
+                      <button onClick={() => handleDeleteUser()} style={{ padding: '10px', backgroundColor: '#dc2626', color: '#fff', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🗑️ ユーザー削除</button>
                     </div>
                   </div>
                 )}
@@ -862,8 +1020,14 @@ export default function SuperAdminConsole() {
               <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '2px solid #2563eb' }}>
                 <h3 style={{ margin: '0 0 10px 0', color: '#2563eb', fontSize: '16px', fontWeight: 'bold' }}>🏋️‍♂️ 調教成功確率設定</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px', gap: '10px', alignItems: 'end' }}>
-                  <div><label style={labelStyle}>成功確率 (%)</label><input type="number" min="0" max="100" value={trainingSuccessRate} onChange={e=>setTrainingSuccessRate(Number(e.target.value))} style={inputStyle} /></div>
-                  <div><label style={labelStyle}>大成功(S)率 (%)</label><input type="number" min="0" max="100" value={trainingSuperRate} onChange={e=>setTrainingSuperRate(Number(e.target.value))} style={inputStyle} /></div>
+                  <div>
+                    <label style={labelStyle}>成功確率 (%)</label>
+                    <input type="number" min="0" max="100" value={trainingSuccessRate} onChange={e=>setTrainingSuccessRate(Number(e.target.value))} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>大成功(S)率 (%)</label>
+                    <input type="number" min="0" max="100" value={trainingSuperRate} onChange={e=>setTrainingSuperRate(Number(e.target.value))} style={inputStyle} />
+                  </div>
                   <button onClick={handleSaveTrainingRates} style={{ padding: '10px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>保存</button>
                 </div>
               </div>
@@ -873,11 +1037,21 @@ export default function SuperAdminConsole() {
           {/* 🔨 TAB: セレクトセール出品 */}
           {adminTab === 'auction_admin' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
-              <h2 style={{ margin: '0 0 14px 0', color: '#d97706', fontSize: '18px', fontWeight: 'bold' }}>🔨 運営公式 セレクトセール出品（Discord通知付）</h2>
+              <h2 style={{ margin: '0 0 14px 0', color: '#d97706', fontSize: '18px', fontWeight: 'bold' }}>
+                🔨 運営公式 セレクトセール出品（Discord通知付）
+              </h2>
               <form onSubmit={handleAddOfficialAuction} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div><label style={labelStyle}>目玉競走馬の名前</label><input type="text" placeholder="例: ★SS確定 サンデーサイレンス産駒" value={officialHorseName} onChange={e=>setOfficialHorseName(e.target.value)} style={inputStyle} required /></div>
-                <div><label style={labelStyle}>最低開始価格 (G)</label><input type="number" step="100000" value={officialStartPrice} onChange={e=>setOfficialStartPrice(Number(e.target.value))} style={inputStyle} required /></div>
-                <button type="submit" style={{ padding: '14px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>セレクトセールに出品する 🔨</button>
+                <div>
+                  <label style={labelStyle}>目玉競走馬の名前</label>
+                  <input type="text" placeholder="例: ★SS確定 サンデーサイレンス産駒" value={officialHorseName} onChange={e=>setOfficialHorseName(e.target.value)} style={inputStyle} required />
+                </div>
+                <div>
+                  <label style={labelStyle}>最低開始価格 (G)</label>
+                  <input type="number" step="100000" value={officialStartPrice} onChange={e=>setOfficialStartPrice(Number(e.target.value))} style={inputStyle} required />
+                </div>
+                <button type="submit" style={{ padding: '14px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+                  セレクトセールに出品する 🔨
+                </button>
               </form>
             </div>
           )}
@@ -886,8 +1060,12 @@ export default function SuperAdminConsole() {
           {adminTab === 'horses' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0, color: '#16a34a', fontWeight: 'bold', fontSize: '15px' }}>🗞️ 予想印（◎○▲△）管理</h3>
-                <button onClick={handleAutoAssignMarks} style={{ backgroundColor: '#1e3a8a', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🤖 AI自動記印</button>
+                <div>
+                  <h3 style={{ margin: 0, color: '#16a34a', fontWeight: 'bold', fontSize: '15px' }}>🗞️ 予想印（◎○▲△）管理</h3>
+                </div>
+                <button onClick={handleAutoAssignMarks} style={{ backgroundColor: '#1e3a8a', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                  🤖 AI自動記印
+                </button>
               </div>
 
               <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
@@ -895,7 +1073,12 @@ export default function SuperAdminConsole() {
                 <form onSubmit={handleAddHorse} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr', gap: '8px' }}>
                     <div><label style={labelStyle}>馬番</label><input type="number" value={newHorseNumber} onChange={e=>setNewHorseNumber(Number(e.target.value))} style={inputStyle} /></div>
-                    <div><label style={labelStyle}>馬名</label><select value={newHorseName} onChange={e=>setNewHorseName(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }}>{activeHorseMasters.map(h => <option key={h.id} value={h.name}>🐎 {h.name}</option>)}</select></div>
+                    <div>
+                      <label style={labelStyle}>馬名</label>
+                      <select value={newHorseName} onChange={e=>setNewHorseName(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }}>
+                        {activeHorseMasters.map(h => <option key={h.id} value={h.name}>🐎 {h.name}</option>)}
+                      </select>
+                    </div>
                     <div><label style={labelStyle}>騎手</label><select value={newJockey} onChange={e=>setNewJockey(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#2563eb' }}>{jockeyList.map(j => <option key={j.id} value={j.name}>🏇 {j.name}</option>)}</select></div>
                   </div>
                   <button type="submit" style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>出走確定 ➕</button>
@@ -918,7 +1101,7 @@ export default function SuperAdminConsole() {
                           </td>
                           <td style={{ fontWeight: 'bold', color: '#16a34a' }}>🐎 {h.name}</td>
                           <td style={{ color: '#2563eb', fontWeight: 'bold' }}>🏇 {h.jockey}</td>
-                          <td><button onClick={()=>handleDeleteHorse(h.id)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>削除</button></td>
+                          <td><button onClick={()=>handleDeleteHorse(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>削除</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -931,26 +1114,46 @@ export default function SuperAdminConsole() {
           {/* 🏆 TAB: 着順確定 */}
           {adminTab === 'settle' && (
             <div style={{ border: '2px solid #2563eb', padding: '20px', borderRadius: '16px', backgroundColor: '#ffffff' }}>
-              <h3 style={{ color: '#1e3a8a', marginTop: 0, fontWeight: 'bold', fontSize: '18px' }}>🏆 【{selectedRaceNo}R】 着順確定（1着〜9着）</h3>
+              <h3 style={{ color: '#1e3a8a', marginTop: 0, fontWeight: 'bold', fontSize: '18px' }}>
+                🏆 【{selectedRaceNo}R】 着順確定（1着〜9着）
+              </h3>
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginBottom: '20px' }}>
                 <div><label style={{ fontSize: '11px', color: '#dc2626', fontWeight: 'bold', display: 'block' }}>🥇 1着 (必須)</label><select value={rank1} onChange={e=>setRank1(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
                 <div><label style={{ fontSize: '11px', color: '#2563eb', fontWeight: 'bold', display: 'block' }}>🥈 2着</label><select value={rank2} onChange={e=>setRank2(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
                 <div><label style={{ fontSize: '11px', color: '#ca8a04', fontWeight: 'bold', display: 'block' }}>🥉 3着</label><select value={rank3} onChange={e=>setRank3(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
                 <div><label style={labelStyle}>4着</label><select value={rank4} onChange={e=>setRank4(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
                 <div><label style={labelStyle}>5着</label><select value={rank5} onChange={e=>setRank5(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
+                <div><label style={labelStyle}>6着</label><select value={rank6} onChange={e=>setRank6(e.target.value)} style={inputStyle}><option value="">選択</option>{horses.map(h => <option key={h.id} value={h.horse_number}>{h.horse_number}番 {h.name}</option>)}</select></div>
               </div>
-              <button onClick={handleSettleFullRace} style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '16px', fontSize: '16px', fontWeight: 'bold', borderRadius: '10px', cursor: 'pointer' }}>🏁 結果確定・配当自動振込 ＆ Discord速報 📢</button>
+
+              <button 
+                onClick={handleSettleFullRace} 
+                style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '16px', fontSize: '16px', fontWeight: 'bold', borderRadius: '10px', cursor: 'pointer' }}
+              >
+                🏁 結果確定・配当自動振込 ＆ Discord速報 📢
+              </button>
             </div>
           )}
 
           {/* 📢 TAB: アプデ・お知らせ配信 */}
           {adminTab === 'news_edit' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0', maxWidth: '500px' }}>
-              <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>📢 アプデ・お知らせ新規配信（Discord同時通知）</h2>
+              <h2 style={{ margin: '0 0 14px 0', color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>
+                📢 アプデ・お知らせ新規配信（Discord同時通知）
+              </h2>
               <form onSubmit={handleAddNews} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div><label style={labelStyle}>タイトル</label><input type="text" placeholder="例: 大型アップデート完了！" value={newsTitle} onChange={e=>setNewsTitle(e.target.value)} style={inputStyle} required /></div>
-                <div><label style={labelStyle}>本文</label><textarea rows={4} placeholder="内容を入力" value={newsContent} onChange={e=>setNewsContent(e.target.value)} style={{ ...inputStyle, resize: 'vertical' }} required /></div>
-                <button type="submit" style={{ padding: '12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>全プレイヤー ＆ Discordに一斉配信 📢</button>
+                <div>
+                  <label style={labelStyle}>タイトル</label>
+                  <input type="text" placeholder="例: 大型アップデート完了！" value={newsTitle} onChange={e=>setNewsTitle(e.target.value)} style={inputStyle} required />
+                </div>
+                <div>
+                  <label style={labelStyle}>本文</label>
+                  <textarea rows={4} placeholder="内容を入力" value={newsContent} onChange={e=>setNewsContent(e.target.value)} style={{ ...inputStyle, resize: 'vertical' }} required />
+                </div>
+                <button type="submit" style={{ padding: '12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+                  全プレイヤー ＆ Discordに一斉配信 📢
+                </button>
               </form>
             </div>
           )}
