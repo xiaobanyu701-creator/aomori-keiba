@@ -47,6 +47,9 @@ export default function IPATPage() {
       if (race) {
         setCurrentRace(race);
         fetchHorsesAndOnlineOdds(race.id);
+      } else {
+        setCurrentRace({ race_number: selectedRaceNo, title: '特別競走', status: 'open' });
+        setHorses([]);
       }
     }
   }, [selectedRaceNo, races]);
@@ -138,7 +141,6 @@ export default function IPATPage() {
     fetchChat();
   };
 
-  // 🔨 セリ市（オークション入札）処理
   const handlePlaceBid = async (auctionId: string, currentBid: number) => {
     if (!currentUser) return alert('ログインしてください');
     if (bidAmountInput <= currentBid) return alert('現在の最高入札額より高く入札してください');
@@ -258,7 +260,7 @@ export default function IPATPage() {
     setCurrentUser({ ...currentUser, balance: newBal });
     alert(`🎫 【${currentRace.race_number}R】${betType} (${selection}) を ${betAmount.toLocaleString()} G で購入しました！`);
     fetchMyBets();
-    fetchHorsesAndOnlineOdds(currentRace.id);
+    if (currentRace.id) fetchHorsesAndOnlineOdds(currentRace.id);
     fetchRanking();
   };
 
@@ -619,7 +621,6 @@ export default function IPATPage() {
               </div>
             )}
 
-            {/* 🔨 新設: セリ市（プレイヤー市場 ＆ 運営公式セレクトセール） */}
             {mainTab === 'auction' && (
               <div>
                 <h3 style={{ margin: '0 0 16px 0', color: '#d97706' }}>🔨 競走馬 セリ市・オークション会場</h3>

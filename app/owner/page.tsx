@@ -15,7 +15,6 @@ export default function OwnerPage() {
   const [jockeyList, setJockeyList] = useState<any[]>([]);
   const [pedigreeList, setPedigreeList] = useState<any[]>([]);
 
-  // 🧬 スタホ配合用ステート
   const [selectedSire, setSelectedSire] = useState('');
   const [selectedDam, setSelectedDam] = useState('');
   const [foalNameInput, setFoalNameInput] = useState('');
@@ -109,21 +108,18 @@ export default function OwnerPage() {
     }
   };
 
-  // 🧬 スタホ風 自家製本格配合（父×母）
   const handleStarhorseBreed = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!foalNameInput.trim()) return alert('仔馬の名前を入力してください');
     if (!selectedSire || !selectedDam) return alert('父馬と母馬を選択してください');
     if (selectedSire === selectedDam) return alert('父馬と母馬には異なる血統を選択してください');
 
-    // 自分の所有種牡馬なら種付け料0G（無料）、他なら500,000G
     const sireObj = pedigreeList.find(p => p.name === selectedSire);
     const isMySire = sireObj?.owner_name === currentUser.discord_name;
     const fee = isMySire ? 0 : 500000;
 
     if ((currentUser.balance || 0) < fee) return alert('種付け費用が足りません');
 
-    // 素質継承判定
     const ranks = ['SS', 'S', 'A', 'B'];
     const inheritedRank = isMySire ? 'SS' : ranks[Math.floor(Math.random() * ranks.length)];
 
@@ -153,7 +149,6 @@ export default function OwnerPage() {
     setActiveTab('my_horses');
   };
 
-  // 🔨 セリ市へ愛馬を出品
   const handleSellAtAuction = async (horseId: string, horseName: string) => {
     const startPriceStr = prompt(`「${horseName}」をセリ市に出品します。最低落札（開始）価格を入力してください(G):`, '500000');
     if (!startPriceStr) return;
@@ -375,7 +370,6 @@ export default function OwnerPage() {
               </div>
             )}
 
-            {/* 🧬 スタホ風 自家製配合（父×母） */}
             {activeTab === 'starhorse_breed' && (
               <div style={{ maxWidth: '600px' }}>
                 <h3 style={{ margin: '0 0 16px 0', color: '#16a34a' }}>🧬 スタホ風 自家製本格配合（父×母）</h3>
