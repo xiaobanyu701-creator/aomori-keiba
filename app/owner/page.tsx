@@ -8,6 +8,7 @@ export default function OwnerPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [discordInput, setDiscordInput] = useState('');
   const [pinInput, setPinInput] = useState('');
+  const [showPrivacy, setShowPrivacy] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'my_horses' | 'starhorse_breed' | 'pedigree' | 'jockey'>('my_horses');
 
@@ -86,7 +87,7 @@ export default function OwnerPage() {
     }
   };
 
-  // 🛡️ IP判定 ＋ 既存ユーザーログイン時IP自動更新機能付き 認証処理
+  // 🛡️ IP判定 ＋ 既存ユーザーログイン時IP自動更新機能
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!discordInput || !pinInput) return alert('名前とPINコードを入力してください');
@@ -94,7 +95,6 @@ export default function OwnerPage() {
     const { data: users } = await supabase.from('users').select('*');
     const exUser = users?.find((u) => u.discord_name === discordInput);
 
-    // 🌐 現在アクセス中のIPアドレスを取得
     let userIp = '';
     try {
       const ipRes = await fetch('https://api.ipify.org?format=json');
@@ -107,7 +107,6 @@ export default function OwnerPage() {
     if (exUser) {
       // 既存ユーザーのログイン
       if (exUser.pin_code === pinInput) {
-        // 🔄 既存ユーザーのIPアドレスが未登録（NULL）か変更されていればDBを自動更新
         if (userIp && exUser.ip_address !== userIp) {
           await supabase.from('users').update({ ip_address: userIp }).eq('id', exUser.id);
           exUser.ip_address = userIp;
@@ -117,7 +116,7 @@ export default function OwnerPage() {
         alert('PINコードが違います');
       }
     } else {
-      // 新規馬主登録：IP重複のチェック
+      // 新規馬主登録：IP重複チェック
       if (userIp) {
         const isIpExists = users?.some((u) => u.ip_address === userIp);
         if (isIpExists) {
@@ -152,6 +151,25 @@ export default function OwnerPage() {
     }
   };
 
+  // 🥕 エサやり・調子コントロール機能
+  const handleFeedHorse = async (horseId: string, horseName: string, itemType: 'carrot' | 'apple') => {
+    const cost = itemType === 'carrot' ? 10000 : 50000;
+    const itemName = itemType === 'carrot' ? '🥕 高級ニンジン' : '🍎 特選リンゴ';
+    const targetCondition = itemType === 'carrot' ? '良好' : '絶好調';
+
+    if ((currentUser.balance || 0) < cost) return alert(`所持金が足りません (${cost.toLocaleString()} G 必要)`);
+    if (!confirm(`「${horseName}」に【${itemName}】を与えますか？ (費用: ${cost.toLocaleString()} G)`)) return;
+
+    await supabase.from('horse_masters').update({ condition: targetCondition }).eq('id', horseId);
+
+    const newBal = (currentUser.balance || 0) - cost;
+    await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
+
+    setCurrentUser({ ...currentUser, balance: newBal });
+    alert(`✨ 「${horseName}」に${itemName}を与えました！【現在の調子: ${targetCondition}】`);
+    loadMyHorses();
+  };
+
   const handleSubmitRaceEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!entryModalHorse) return;
@@ -169,7 +187,7 @@ export default function OwnerPage() {
 
     await supabase.from('horse_masters').update({ status: `${targetRaceNo}R出走申請中` }).eq('id', entryModalHorse.id);
 
-    alert(`📨 「${entryModalHorse.name}」の【${targetRaceNo}R (騎手: ${preferredJockey})】への出走申請を運営へ送信しました！\n管理者の承認をお待ちください。`);
+    alert(`📨 「${entryModalHorse.name}」の【${targetRaceNo}R (騎手: ${preferredJockey})】への出走申請を送信しました！`);
     setEntryModalHorse(null);
     loadMyHorses();
   };
@@ -201,6 +219,8 @@ export default function OwnerPage() {
         guts: 'A',
         temper: 'A',
         status: '現役',
+        condition: '良好',
+        total_prize: 0,
         generation: 2,
       },
     ]);
@@ -367,6 +387,47 @@ export default function OwnerPage() {
                 ログイン / 登録
               </button>
             </form>
+
+            {/* プライバシーポリシーモーダル開くボタン */}
+            <div style={{ marginTop: '20px' }}>
+              <button
+                onClick={() => setShowPrivacy(true)}
+                style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '11px', textDecoration: 'underline', cursor: 'pointer' }}
+              >
+                🔒 プライバシーポリシー（IPアドレスの取り扱いについて）
+              </button>
+            </div>
+
+            {/* プライバシーポリシーポップアップ */}
+            {showPrivacy && (
+              <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 9999 }}>
+                <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '16px', maxWidth: '450px', textAlign: 'left', maxHeight: '80vh', overflowY: 'auto' }}>
+                  <h3 style={{ margin: '0 0 12px 0', color: '#16a34a', fontSize: '16px' }}>🔒 プライバシーポリシー</h3>
+                  <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
+                    当サービス（青森県競馬馬主ラウンジ）では、個人情報保護法に基づき、ユーザーの個人情報・アクセスメタデータを以下の通り適切に管理・保護いたします。
+                  </p>
+                  <h4 style={{ fontSize: '13px', margin: '12px 0 6px 0', color: '#0f172a' }}>1. IPアドレスの取得と利用目的</h4>
+                  <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
+                    当サービスでは、不正アクセス防止および複数アカウントの重複作成（自作自演・新規特典の不正取得）を防止する目的のためにのみ、アクセス時のIPアドレスを取得・記録します。
+                  </p>
+                  <h4 style={{ fontSize: '13px', margin: '12px 0 6px 0', color: '#0f172a' }}>2. 第三者提供の禁止</h4>
+                  <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
+                    取得したIPアドレス等のデータは法令に基づく場合を除き、第三者へ提供・開示されることは一切ありません。
+                  </p>
+                  <h4 style={{ fontSize: '13px', margin: '12px 0 6px 0', color: '#0f172a' }}>3. データの消去</h4>
+                  <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
+                    アカウントが削除または利用停止された場合、紐づくIPアドレスデータもデータベースから一括消去されます。
+                  </p>
+                  <button
+                    onClick={() => setShowPrivacy(false)}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', marginTop: '16px', cursor: 'pointer' }}
+                  >
+                    閉じる
+                  </button>
+                </div>
+              </div>
+            )}
+
           </div>
         ) : (
           <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0' }}>
@@ -386,31 +447,42 @@ export default function OwnerPage() {
                     まだ所有馬がいません。「スタホ配合」で生産してみましょう！
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
                     {myHorses.map((h, i) => {
                       const isRetired = h.status === '引退';
                       const isPedigree = h.status === '種牡馬/繁殖牝馬';
                       const isPendingRetire = h.status === '引退申請中';
                       const isRunning = h.status?.includes('出走');
                       const isAuction = h.status === 'セリ出品中';
+                      const condition = h.condition || '良好';
 
                       return (
                         <div key={h.id || i} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                             <span style={{ fontWeight: 'bold', fontSize: '16px', color: '#16a34a' }}>🐎 {h.name}</span>
-                            <span style={{ fontSize: '10px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', color: '#fff', backgroundColor: isAuction ? '#d97706' : isPedigree ? '#8b5cf6' : isRetired ? '#64748b' : isPendingRetire ? '#eab308' : isRunning ? '#dc2626' : '#16a34a' }}>
-                              {h.status || '現役'}
-                            </span>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <span style={{ fontSize: '10px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', color: '#fff', backgroundColor: condition === '絶好調' ? '#ef4444' : condition === '良好' ? '#16a34a' : '#64748b' }}>
+                                🔥 {condition}
+                              </span>
+                              <span style={{ fontSize: '10px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', color: '#fff', backgroundColor: isAuction ? '#d97706' : isPedigree ? '#8b5cf6' : isRetired ? '#64748b' : isPendingRetire ? '#eab308' : isRunning ? '#dc2626' : '#16a34a' }}>
+                                {h.status || '現役'}
+                              </span>
+                            </div>
                           </div>
 
-                          <div style={{ fontSize: '12px', marginTop: '6px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <div style={{ fontSize: '12px', marginTop: '6px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <div>血統: <strong>{h.sire_name || '自家'} × {h.dam_name || '自家'} ({h.generation || 1}代目)</strong></div>
                             <div>素質: <strong style={{ color: '#dc2626' }}>【{h.rank || 'B'}ランク】</strong></div>
                             <div>速: {h.speed || 'B'} / 体: {h.stamina || 'B'} / 根: {h.guts || 'B'}</div>
+                            <div style={{ backgroundColor: '#e2e8f0', padding: '4px 8px', borderRadius: '6px', marginTop: '2px', fontWeight: 'bold', color: '#16a34a' }}>
+                              🏆 累計賞金: {(h.total_prize || 0).toLocaleString()} G
+                            </div>
                           </div>
 
                           {!isRetired && !isPendingRetire && !isPedigree && !isAuction && h.id && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
+                              
+                              {/* レース出走ボタン */}
                               <button
                                 onClick={() => setEntryModalHorse(h)}
                                 style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
@@ -418,17 +490,26 @@ export default function OwnerPage() {
                                 🏆 レース出走 ＆ 騎手エントリー 🏇
                               </button>
 
+                              {/* 調教ボタン */}
                               <div style={{ display: 'flex', gap: '4px' }}>
                                 <button onClick={() => handleTrainHorse(h.id, h.name, '坂路')} style={{ flex: 1, backgroundColor: '#3b82f6', color: '#fff', border: 'none', padding: '5px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>坂路(速)</button>
                                 <button onClick={() => handleTrainHorse(h.id, h.name, 'ウッド')} style={{ flex: 1, backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '5px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>ウッド(根)</button>
                                 <button onClick={() => handleTrainHorse(h.id, h.name, 'プール')} style={{ flex: 1, backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '5px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>プール(体)</button>
                               </div>
 
+                              {/* 🥕 エサやりボタン */}
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button onClick={() => handleFeedHorse(h.id, h.name, 'carrot')} style={{ flex: 1, backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '5px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>🥕 ニンジン (1万G)</button>
+                                <button onClick={() => handleFeedHorse(h.id, h.name, 'apple')} style={{ flex: 1, backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '5px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>🍎 リンゴ (5万G)</button>
+                              </div>
+
+                              {/* 整理・出品ボタン */}
                               <div style={{ display: 'flex', gap: '4px' }}>
                                 <button onClick={() => handleSellAtAuction(h.id, h.name)} style={{ flex: 1, backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '6px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>セリ出品 🔨</button>
                                 <button onClick={() => handleRegisterPedigree(h.id, h.name)} style={{ flex: 1, backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '6px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>種牡馬 🧬</button>
                                 <button onClick={() => handleRetireRequest(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>引退 🛑</button>
                               </div>
+
                             </div>
                           )}
                         </div>
@@ -616,4 +697,4 @@ function TabBtn({ active, onClick, text }: { active: boolean; onClick: () => voi
 }
 
 const labelStyle = { display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px', fontWeight: 'bold' };
-const inputStyle = { padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', width: '100%', backgroundColor: '#fff' };
+const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', color: '#0f172a', fontSize: '13px' };
