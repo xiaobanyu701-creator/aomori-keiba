@@ -10,7 +10,7 @@ export default function OwnerPage() {
   const [pinInput, setPinInput] = useState('');
   const [showPrivacy, setShowPrivacy] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'my_horses' | 'starhorse_breed' | 'pedigree' | 'jockey'>('my_horses');
+  const [activeTab, setActiveTab] = useState<'my_horses' | 'starhorse_breed' | 'pedigree' | 'jockey' | 'ai_hospital'>('my_horses');
 
   const [myHorses, setMyHorses] = useState<any[]>([]);
   const [jockeyList, setJockeyList] = useState<any[]>([]);
@@ -105,7 +105,6 @@ export default function OwnerPage() {
     }
 
     if (exUser) {
-      // 既存ユーザーのログイン
       if (exUser.pin_code === pinInput) {
         if (userIp && exUser.ip_address !== userIp) {
           await supabase.from('users').update({ ip_address: userIp }).eq('id', exUser.id);
@@ -116,7 +115,6 @@ export default function OwnerPage() {
         alert('PINコードが違います');
       }
     } else {
-      // 新規馬主登録：IP重複チェック
       if (userIp) {
         const isIpExists = users?.some((u) => u.ip_address === userIp);
         if (isIpExists) {
@@ -149,6 +147,89 @@ export default function OwnerPage() {
         }
       }
     }
+  };
+
+  // 🎓 1. AI調教師おまかせ調教処理
+  const handleAiTrainerAutoTrain = async (horse: any, trainerType: 'yahagi' | 'fujisawa' | 'tataki') => {
+    let nextCondition = '良好';
+    let cost = 50000;
+    let trainerName = '';
+
+    if (trainerType === 'yahagi') {
+      trainerName = '🔥 矢作風スパルタAI';
+      nextCondition = '絶好調';
+      cost = 80000;
+    } else if (trainerType === 'fujisawa') {
+      trainerName = '🌱 藤沢風おまかせAI';
+      nextCondition = '良好';
+      cost = 30000;
+    } else {
+      trainerName = '🎯 叩き良化型AI';
+      nextCondition = '絶好調';
+      cost = 60000;
+    }
+
+    if ((currentUser.balance || 0) < cost) return alert(`所持金が足りません (${cost.toLocaleString()} G 必要)`);
+
+    // 🩺 2. AI故障率計算フラグ
+    const fatigue = horse.fatigue || 20;
+    const injuryRate = (fatigue * 0.8) + (trainerType === 'yahagi' ? 25 : 5);
+    const rand = Math.random() * 100;
+
+    let isInjured = false;
+    let injuryType = '';
+
+    if (rand < injuryRate) {
+      isInjured = true;
+      injuryType = rand < 5 ? '屈腱炎(重傷)' : 'ソエ(軽傷)';
+    }
+
+    if (isInjured) {
+      await supabase.from('horse_masters').update({ status: `故障休養中(${injuryType})`, condition: '疲労' }).eq('id', horse.id);
+      alert(`🩺 【AI獣医師診断】 ${trainerName}の調教中、「${horse.name}」が【${injuryType}】を発症しました！温泉治療が必要です。`);
+    } else {
+      await supabase.from('horse_masters').update({ condition: nextCondition, fatigue: Math.min(100, fatigue + 15) }).eq('id', horse.id);
+      alert(`🎓 【${trainerName}】が「${horse.name}」を最適仕上げしました！【コンディション: ${nextCondition}】`);
+    }
+
+    const newBal = (currentUser.balance || 0) - cost;
+    await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
+    setCurrentUser({ ...currentUser, balance: newBal });
+    loadMyHorses();
+  };
+
+  // ♨️ AI温泉治療機能
+  const handleHealHorseWithOnsen = async (horse: any) => {
+    const cost = 200000;
+    if ((currentUser.balance || 0) < cost) return alert('治療費 (200,000 G) が足りません');
+    if (!confirm(`「${horse.name}」を温泉施設で完治復帰させますか？ (費用: 200,000 G)`)) return;
+
+    await supabase.from('horse_masters').update({ status: '現役', condition: '良好', fatigue: 0 }).eq('id', horse.id);
+    const newBal = (currentUser.balance || 0) - cost;
+    await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
+
+    setCurrentUser({ ...currentUser, balance: newBal });
+    alert(`♨️ 「${horse.name}」のケガが全快し現役復帰しました！`);
+    loadMyHorses();
+  };
+
+  // 🧬 4. AI配合評価・血統アナライザー診断計算
+  const getAiBreedingReport = () => {
+    if (!selectedSire || !selectedDam) return null;
+    const isSame = selectedSire === selectedDam;
+    
+    let stars = '★★★★☆ (相性良好)';
+    let comment = 'スピードとパワーのバランスが良い黄金配合です。マイル〜中距離で期待できます！';
+    
+    if (selectedSire.includes('サンデー') || selectedDam.includes('サンデー')) {
+      stars = '★★★★★ (★5 黄金ニックス)';
+      comment = '『奇跡の血量 3×4』検出！爆発的な瞬発力を秘めた最高峰配合です！';
+    } else if (isSame) {
+      stars = '★☆☆☆☆ (危険な近親交配)';
+      comment = '血が濃すぎます！ケガ・健康度低下のリスクが高まります。';
+    }
+
+    return { stars, comment };
   };
 
   // 🥕 エサやり・調子コントロール機能
@@ -330,6 +411,8 @@ export default function OwnerPage() {
     alert(`🏇 「${selectedHorseName}」の主戦騎手を【${selectedJockey}】様へ変更申請しました！`);
   };
 
+  const aiBreedingReport = getAiBreedingReport();
+
   return (
     <div style={{ backgroundColor: '#f1f5f9', minHeight: '100vh', fontFamily: 'sans-serif', color: '#0f172a' }}>
       <header
@@ -388,7 +471,6 @@ export default function OwnerPage() {
               </button>
             </form>
 
-            {/* プライバシーポリシーモーダル開くボタン */}
             <div style={{ marginTop: '20px' }}>
               <button
                 onClick={() => setShowPrivacy(true)}
@@ -398,25 +480,12 @@ export default function OwnerPage() {
               </button>
             </div>
 
-            {/* プライバシーポリシーポップアップ */}
             {showPrivacy && (
               <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 9999 }}>
                 <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '16px', maxWidth: '450px', textAlign: 'left', maxHeight: '80vh', overflowY: 'auto' }}>
                   <h3 style={{ margin: '0 0 12px 0', color: '#16a34a', fontSize: '16px' }}>🔒 プライバシーポリシー</h3>
                   <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
                     当サービス（青森県競馬馬主ラウンジ）では、個人情報保護法に基づき、ユーザーの個人情報・アクセスメタデータを以下の通り適切に管理・保護いたします。
-                  </p>
-                  <h4 style={{ fontSize: '13px', margin: '12px 0 6px 0', color: '#0f172a' }}>1. IPアドレスの取得と利用目的</h4>
-                  <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
-                    当サービスでは、不正アクセス防止および複数アカウントの重複作成（自作自演・新規特典の不正取得）を防止する目的のためにのみ、アクセス時のIPアドレスを取得・記録します。
-                  </p>
-                  <h4 style={{ fontSize: '13px', margin: '12px 0 6px 0', color: '#0f172a' }}>2. 第三者提供の禁止</h4>
-                  <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
-                    取得したIPアドレス等のデータは法令に基づく場合を除き、第三者へ提供・開示されることは一切ありません。
-                  </p>
-                  <h4 style={{ fontSize: '13px', margin: '12px 0 6px 0', color: '#0f172a' }}>3. データの消去</h4>
-                  <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
-                    アカウントが削除または利用停止された場合、紐づくIPアドレスデータもデータベースから一括消去されます。
                   </p>
                   <button
                     onClick={() => setShowPrivacy(false)}
@@ -434,11 +503,13 @@ export default function OwnerPage() {
             
             <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px', marginBottom: '20px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <TabBtn active={activeTab === 'my_horses'} onClick={() => setActiveTab('my_horses')} text="📋 所有馬" />
-              <TabBtn active={activeTab === 'starhorse_breed'} onClick={() => setActiveTab('starhorse_breed')} text="🧬 スタホ配合" />
+              <TabBtn active={activeTab === 'ai_hospital'} onClick={() => setActiveTab('ai_hospital')} text="🎓 AI調教・診療所" />
+              <TabBtn active={activeTab === 'starhorse_breed'} onClick={() => setActiveTab('starhorse_breed')} text="🧬 スタホ配合＆AI診断" />
               <TabBtn active={activeTab === 'pedigree'} onClick={() => setActiveTab('pedigree')} text={`🧬 血統書 (${pedigreeList.length})`} />
               <TabBtn active={activeTab === 'jockey'} onClick={() => setActiveTab('jockey')} text="🏇 騎手変更" />
             </div>
 
+            {/* 所有馬タブ */}
             {activeTab === 'my_horses' && (
               <div>
                 <h3 style={{ margin: '0 0 14px 0', color: '#16a34a', fontSize: '18px' }}>🐎 自分の所有馬一覧 ({myHorses.length}頭)</h3>
@@ -454,17 +525,18 @@ export default function OwnerPage() {
                       const isPendingRetire = h.status === '引退申請中';
                       const isRunning = h.status?.includes('出走');
                       const isAuction = h.status === 'セリ出品中';
+                      const isInjured = h.status?.includes('故障');
                       const condition = h.condition || '良好';
 
                       return (
-                        <div key={h.id || i} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                        <div key={h.id || i} style={{ backgroundColor: isInjured ? '#fef2f2' : '#f8fafc', padding: '14px', borderRadius: '12px', border: `1px solid ${isInjured ? '#fca5a5' : '#e2e8f0'}` }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                             <span style={{ fontWeight: 'bold', fontSize: '16px', color: '#16a34a' }}>🐎 {h.name}</span>
                             <div style={{ display: 'flex', gap: '4px' }}>
                               <span style={{ fontSize: '10px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', color: '#fff', backgroundColor: condition === '絶好調' ? '#ef4444' : condition === '良好' ? '#16a34a' : '#64748b' }}>
                                 🔥 {condition}
                               </span>
-                              <span style={{ fontSize: '10px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', color: '#fff', backgroundColor: isAuction ? '#d97706' : isPedigree ? '#8b5cf6' : isRetired ? '#64748b' : isPendingRetire ? '#eab308' : isRunning ? '#dc2626' : '#16a34a' }}>
+                              <span style={{ fontSize: '10px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', color: '#fff', backgroundColor: isAuction ? '#d97706' : isPedigree ? '#8b5cf6' : isRetired ? '#64748b' : isPendingRetire ? '#eab308' : isRunning ? '#dc2626' : isInjured ? '#dc2626' : '#16a34a' }}>
                                 {h.status || '現役'}
                               </span>
                             </div>
@@ -479,10 +551,27 @@ export default function OwnerPage() {
                             </div>
                           </div>
 
-                          {!isRetired && !isPendingRetire && !isPedigree && !isAuction && h.id && (
+                          {/* 🎓 AI調教師おまかせ選択メニュー */}
+                          {!isInjured && !isRetired && !isPedigree && (
+                            <div style={{ marginTop: '10px', backgroundColor: '#eff6ff', padding: '8px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+                              <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#1e3a8a', marginBottom: '4px' }}>🎓 AI調教師におまかせ仕上げ:</div>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button onClick={() => handleAiTrainerAutoTrain(h, 'yahagi')} style={{ flex: 1, backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '4px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>🔥 矢作スパルタ</button>
+                                <button onClick={() => handleAiTrainerAutoTrain(h, 'fujisawa')} style={{ flex: 1, backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '4px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>🌱 藤沢安全</button>
+                                <button onClick={() => handleAiTrainerAutoTrain(h, 'tataki')} style={{ flex: 1, backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '4px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>🎯 叩き良化</button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 🩺 AI温泉治療ボタン */}
+                          {isInjured && (
+                            <button onClick={() => handleHealHorseWithOnsen(h)} style={{ width: '100%', marginTop: '10px', backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                              ♨️ AI温泉リハビリ施設で完治復帰する (20万G)
+                            </button>
+                          )}
+
+                          {!isRetired && !isPendingRetire && !isPedigree && !isAuction && !isInjured && h.id && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
-                              
-                              {/* レース出走ボタン */}
                               <button
                                 onClick={() => setEntryModalHorse(h)}
                                 style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
@@ -490,20 +579,17 @@ export default function OwnerPage() {
                                 🏆 レース出走 ＆ 騎手エントリー 🏇
                               </button>
 
-                              {/* 調教ボタン */}
                               <div style={{ display: 'flex', gap: '4px' }}>
                                 <button onClick={() => handleTrainHorse(h.id, h.name, '坂路')} style={{ flex: 1, backgroundColor: '#3b82f6', color: '#fff', border: 'none', padding: '5px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>坂路(速)</button>
                                 <button onClick={() => handleTrainHorse(h.id, h.name, 'ウッド')} style={{ flex: 1, backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '5px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>ウッド(根)</button>
                                 <button onClick={() => handleTrainHorse(h.id, h.name, 'プール')} style={{ flex: 1, backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '5px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>プール(体)</button>
                               </div>
 
-                              {/* 🥕 エサやりボタン */}
                               <div style={{ display: 'flex', gap: '4px' }}>
                                 <button onClick={() => handleFeedHorse(h.id, h.name, 'carrot')} style={{ flex: 1, backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '5px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>🥕 ニンジン (1万G)</button>
                                 <button onClick={() => handleFeedHorse(h.id, h.name, 'apple')} style={{ flex: 1, backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '5px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>🍎 リンゴ (5万G)</button>
                               </div>
 
-                              {/* 整理・出品ボタン */}
                               <div style={{ display: 'flex', gap: '4px' }}>
                                 <button onClick={() => handleSellAtAuction(h.id, h.name)} style={{ flex: 1, backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '6px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>セリ出品 🔨</button>
                                 <button onClick={() => handleRegisterPedigree(h.id, h.name)} style={{ flex: 1, backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '6px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>種牡馬 🧬</button>
@@ -520,12 +606,53 @@ export default function OwnerPage() {
               </div>
             )}
 
+            {/* 🎓 1 & 🩺 2 新タブ：AI調教＆診療所 */}
+            {activeTab === 'ai_hospital' && (
+              <div>
+                <h3 style={{ margin: '0 0 12px 0', color: '#1e3a8a', fontSize: '18px' }}>🎓 AI調教師 ＆ 🩺 獣医リハビリ診療所</h3>
+                <p style={{ color: '#64748b', fontSize: '12px', marginBottom: '16px' }}>
+                  AI調教師に愛馬を委託して調整させたり、疲労・ケガを負った馬を温泉治療できます。
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {myHorses.map((h) => {
+                    const isInjured = h.status?.includes('故障');
+
+                    return (
+                      <div key={h.id} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#16a34a' }}>🐎 {h.name}</div>
+                          <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>
+                            ステータス: <strong>{h.status || '現役'}</strong> / 調子: <strong>{h.condition || '良好'}</strong>
+                          </div>
+                        </div>
+
+                        <div>
+                          {isInjured ? (
+                            <button onClick={() => handleHealHorseWithOnsen(h)} style={{ padding: '8px 14px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                              ♨️ 温泉治療 (20万G)
+                            </button>
+                          ) : (
+                            <button onClick={() => handleAiTrainerAutoTrain(h, 'fujisawa')} style={{ padding: '8px 14px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                              🎓 AIおまかせ調教 (3万G)
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 🧬 4. AI配合評価＆血統アナライザータブ */}
             {activeTab === 'starhorse_breed' && (
               <div style={{ maxWidth: '500px' }}>
-                <h3 style={{ margin: '0 0 12px 0', color: '#16a34a', fontSize: '18px' }}>🧬 スタホ風 自家製本格配合</h3>
+                <h3 style={{ margin: '0 0 12px 0', color: '#16a34a', fontSize: '18px' }}>🧬 AI血統配合診断アナライザー</h3>
                 <p style={{ color: '#64748b', fontSize: '12px', marginBottom: '16px' }}>
                   所有種牡馬なら<strong>種付け料0G (無料)</strong>で種付けできます！
                 </p>
+
                 <form onSubmit={handleStarhorseBreed} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <div>
                     <label style={labelStyle}>① 父馬（種牡馬）</label>
@@ -548,6 +675,14 @@ export default function OwnerPage() {
                       ))}
                     </select>
                   </div>
+
+                  {/* AI診断レポートパネル */}
+                  {aiBreedingReport && (
+                    <div style={{ backgroundColor: '#fefce8', border: '2px solid #eab308', padding: '12px', borderRadius: '10px' }}>
+                      <div style={{ fontWeight: 'bold', color: '#ca8a04', fontSize: '13px' }}>🤖 AI配合評価: {aiBreedingReport.stars}</div>
+                      <div style={{ fontSize: '12px', color: '#854d0e', marginTop: '4px' }}>{aiBreedingReport.comment}</div>
+                    </div>
+                  )}
 
                   <div>
                     <label style={labelStyle}>③ 仔馬の名前</label>
