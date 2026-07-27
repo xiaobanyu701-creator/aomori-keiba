@@ -18,7 +18,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to fetch Discord user' }, { status: 400 });
     }
 
-    // ⚙️ 環境変数からID類を読み込み
+    // ⚙️ Vercelの環境変数からID類を読み込み
     const guildId = process.env.DISCORD_GUILD_ID;
     const roleId = process.env.DISCORD_VERIFIED_ROLE_ID;
     const botToken = process.env.DISCORD_BOT_TOKEN;
