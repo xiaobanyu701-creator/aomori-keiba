@@ -19,7 +19,6 @@ export default function SuperAdminConsole() {
   const [jockeyList, setJockeyList] = useState<any[]>([]);
   const [horseMasterList, setHorseMasterList] = useState<any[]>([]);
 
-  // 📨 出走申請リスト用ステート
   const [raceRequests, setRaceRequests] = useState<any[]>([]);
 
   const [addJockeyName, setAddJockeyName] = useState('');
@@ -29,7 +28,6 @@ export default function SuperAdminConsole() {
   const [assignTargetHorseId, setAssignTargetHorseId] = useState<string>('');
   const [assignTargetOwnerName, setAssignTargetOwnerName] = useState<string>('');
 
-  // 👤 プレイヤー管理 ＆ 🎖️ 称号付与用
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [customBalanceInput, setCustomBalanceInput] = useState<string>('');
@@ -37,11 +35,9 @@ export default function SuperAdminConsole() {
   const [customPinInput, setCustomPinInput] = useState<string>('');
   const [customTitleInput, setCustomTitleInput] = useState<string>('万馬券ハンター');
 
-  // 🧬 生産馬個別確認・編集用ステート
   const [breedEditOwnerName, setBreedEditOwnerName] = useState<string>('');
   const [userBredHorses, setUserBredHorses] = useState<any[]>([]);
 
-  // 📢 アプデ＆💬 チャット＆🎁 ログボ＆🏋️‍♂️ 調教＆🔨 公式セレクトセール用ステート
   const [newsTitle, setNewsTitle] = useState('');
   const [newsContent, setNewsContent] = useState('');
   const [newsList, setNewsList] = useState<any[]>([]);
@@ -53,13 +49,9 @@ export default function SuperAdminConsole() {
   const [officialHorseName, setOfficialHorseName] = useState('');
   const [officialStartPrice, setOfficialStartPrice] = useState<number>(1000000);
 
-  // ⚡ 出走馬一括テキスト登録用
   const [bulkImportText, setBulkImportText] = useState('');
-
-  // 📊 レース別リアルタイムプール監視用
   const [allBets, setAllBets] = useState<any[]>([]);
 
-  // レース設定用
   const [editTitle, setEditTitle] = useState('');
   const [editDistance, setEditDistance] = useState(1600);
   const [editCondition, setEditCondition] = useState('良');
@@ -67,13 +59,11 @@ export default function SuperAdminConsole() {
   const [editPrize, setEditPrize] = useState(1000000);
   const [editGrade, setEditGrade] = useState('一般');
 
-  // 出走馬追加用
   const [newHorseNumber, setNewHorseNumber] = useState(1);
   const [newHorseName, setNewHorseName] = useState(''); 
   const [newHorseAge, setNewHorseAge] = useState(2);
   const [newJockey, setNewJockey] = useState('');
 
-  // 🏁 1着〜9着 着順確定用ステート
   const [rank1, setRank1] = useState('');
   const [rank2, setRank2] = useState('');
   const [rank3, setRank3] = useState('');
@@ -194,23 +184,17 @@ export default function SuperAdminConsole() {
   };
 
   const fetchNews = async () => {
-    const { data } = await supabase.from('news').select('*');
-    if (data) {
-      setNewsList([...data].reverse());
-    } else {
-      const local = JSON.parse(localStorage.getItem('app_news_list') || '[]');
-      setNewsList(local);
-    }
+    try {
+      const { data, error } = await supabase.from('news').select('*');
+      if (data && !error) setNewsList([...data].reverse());
+    } catch (e) { console.error(e); }
   };
 
   const fetchChat = async () => {
-    const { data } = await supabase.from('inquiries').select('*').eq('title', '【パット雑談チャット】');
-    if (data) {
-      setChatMessages([...data].reverse());
-    } else {
-      const local = JSON.parse(localStorage.getItem('app_paddock_chat') || '[]');
-      setChatMessages(local);
-    }
+    try {
+      const { data, error } = await supabase.from('inquiries').select('*').eq('title', '【パット雑談チャット】');
+      if (data && !error) setChatMessages([...data].reverse());
+    } catch (e) { console.error(e); }
   };
 
   const fetchAllBets = async () => {
@@ -219,17 +203,16 @@ export default function SuperAdminConsole() {
   };
 
   const fetchRaceRequests = async () => {
-    const { data } = await supabase.from('race_requests').select('*').eq('status', 'pending');
-    if (data) setRaceRequests(data.reverse());
+    try {
+      const { data } = await supabase.from('race_requests').select('*').eq('status', 'pending');
+      if (data) setRaceRequests(data.reverse());
+    } catch (e) { console.error(e); }
   };
 
-  // 🟢 ワンタップで出走申請を「承認・自動レース登録」する神処理
   const handleApproveRaceRequest = async (req: any) => {
-    // 対象レースの情報を取得
     let targetRace = races.find(r => r.race_number === req.target_race_no);
     let raceId = targetRace?.id;
 
-    // もしレースがまだ未作成なら自動作成
     if (!raceId) {
       const { data: insertedRace } = await supabase.from('races').insert([{
         race_number: req.target_race_no,
@@ -243,11 +226,9 @@ export default function SuperAdminConsole() {
 
     if (!raceId) return alert('レース情報の取得に失敗しました');
 
-    // 現在の出走馬一覧を取得して次の馬番を割り当て
     const { data: exHorses } = await supabase.from('horses').select('*').eq('race_id', raceId);
     const nextHorseNo = (exHorses?.length || 0) + 1;
 
-    // 出走表へ全自動追加
     await supabase.from('horses').insert([{
       race_id: raceId,
       horse_number: nextHorseNo,
@@ -256,17 +237,13 @@ export default function SuperAdminConsole() {
       age: 3,
     }]);
 
-    // 馬マスターのステータス更新
     await supabase.from('horse_masters').update({ status: `出走(${req.target_race_no}R)` }).eq('name', req.horse_name);
-
-    // 申請ステータスを完了へ
     await supabase.from('race_requests').update({ status: 'approved' }).eq('id', req.id);
 
-    alert(`🟢 「${req.horse_name}」を 【${req.target_race_no}R ${nextHorseNo}番 (騎手: ${req.preferred_jockey})】 にワンタップで自動登録しました！`);
+    alert(`🟢 「${req.horse_name}」を 【${req.target_race_no}R ${nextHorseNo}番 (騎手: ${req.preferred_jockey})】 に自動登録しました！`);
     fetchRaceRequests(); fetchRaces();
   };
 
-  // 🔴 申請を拒否
   const handleRejectRaceRequest = async (req: any) => {
     if (!confirm(`「${req.horse_name}」の出走申請を拒否しますか？`)) return;
     await supabase.from('race_requests').update({ status: 'rejected' }).eq('id', req.id);
@@ -286,13 +263,13 @@ export default function SuperAdminConsole() {
   };
 
   const handleResetAllRaces = async () => {
-    if (!confirm('⚠️ 警告: 1R〜12Rのすべての「出走馬」「投票データ」「着順確定」をまっさらにリセットしますか？')) return;
+    if (!confirm('⚠️ 警告: 1R〜12Rのすべての「出走馬」「投票データ」「着順確定」をまっ散らにリセットしますか？')) return;
     await supabase.from('horses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     await supabase.from('bets').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     for (const r of races) {
       await supabase.from('races').update({ status: 'open', first_horse: null, second_horse: null, third_horse: null }).eq('id', r.id);
     }
-    alert('🧹 全12Rの開催データをまっさらにリセットしました！');
+    alert('🧹 全12Rの開催データをまっ散らにリセットしました！');
     fetchRaces(); fetchAllBets();
   };
 
@@ -555,9 +532,10 @@ export default function SuperAdminConsole() {
     if (currentRace?.id) fetchHorses(currentRace.id);
   };
 
+  // 🏁 結果確定 ＆ 配当金振込 ＆ 🗞️ 馬柱成績自動書き込み保存
   const handleSettleFullRace = async () => {
     if (!currentRace || !rank1) return alert('最低限1着の馬を選択してください');
-    if (!confirm(`【${selectedRaceNo}R】の結果を確定し、的中者全員へ配当金を自動振込（残高加算）しますか？`)) return;
+    if (!confirm(`【${selectedRaceNo}R】の結果を確定し、的中者全員へ配当金を自動振込＆馬柱戦績へ保存しますか？`)) return;
 
     const { data: bets } = await supabase.from('bets').select('*').eq('race_id', String(currentRace.id));
 
@@ -606,6 +584,25 @@ export default function SuperAdminConsole() {
       }
     }
 
+    // 🗞️ 馬柱戦績データベースへ全頭の着順結果を自動追記
+    const rankSelections = [rank1, rank2, rank3, rank4, rank5, rank6, rank7, rank8, rank9];
+    for (let i = 0; i < rankSelections.length; i++) {
+      const horseNo = rankSelections[i];
+      if (horseNo) {
+        const hObj = horses.find(h => String(h.horse_number) === String(horseNo));
+        if (hObj) {
+          try {
+            await supabase.from('horse_results').insert([{
+              horse_name: hObj.name,
+              race_name: `${selectedRaceNo}R ${currentRace.title || ''}`,
+              rank_result: i + 1,
+              jockey: hObj.jockey || 'ルメール',
+            }]);
+          } catch(e){}
+        }
+      }
+    }
+
     const winningHorseObj = horses.find(h => String(h.horse_number) === String(rank1));
     if (winningHorseObj) {
       const { data: masterHorse } = await supabase.from('horse_masters').select('*').eq('name', winningHorseObj.name);
@@ -628,7 +625,7 @@ export default function SuperAdminConsole() {
       first_horse: rank1, second_horse: rank2, third_horse: rank3, rank4, rank5, rank6, rank7, rank8, rank9
     }).eq('id', currentRace.id);
 
-    alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！\nnetkeiba風の結果順位表がユーザー画面に自動反映されました。`); 
+    alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！\nnetkeiba風の馬柱成績が全自動で更新・保存されました！`); 
     fetchRaces(); fetchUsers(); fetchHorseMasters();
   };
 
@@ -712,7 +709,7 @@ export default function SuperAdminConsole() {
 
         <div style={{ maxWidth: '1000px' }}>
 
-          {/* 📨 TAB: 新設 馬主からの出走・主戦騎手 申請＆ワンタップ自動登録 */}
+          {/* 📨 TAB: 馬主からの出走・主戦騎手 申請＆ワンタップ自動登録 */}
           {adminTab === 'race_requests_admin' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '2px solid #2563eb' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -1189,7 +1186,7 @@ export default function SuperAdminConsole() {
           {adminTab === 'settle' && (
             <div style={{ border: '2px solid #2563eb', padding: '32px', borderRadius: '16px', backgroundColor: '#ffffff' }}>
               <h3 style={{ color: '#1e3a8a', marginTop: 0, fontWeight: 'bold', fontSize: '20px' }}>
-                🏆 【{selectedRaceNo}R】 着順確定（1着〜9着）＆ 配当金・馬主手当 自動振込
+                🏆 【{selectedRaceNo}R】 着順確定（1着〜9着）＆ 配当金・馬主手当 自動振込 ＆ 馬柱自動更新
               </h3>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '28px' }}>

@@ -25,6 +25,10 @@ export default function IPATPage() {
   const [auctions, setAuctions] = useState<any[]>([]);
   const [bidAmountInput, setBidAmountInput] = useState<number>(100000);
 
+  // 🗞️ 馬柱（過去戦績データ）
+  const [pastResults, setPastResults] = useState<{ [key: string]: any[] }>({});
+
+  // 投票用
   const [betType, setBetType] = useState('単勝');
   const [selectedHorse1, setSelectedHorse1] = useState('');
   const [selectedHorse2, setSelectedHorse2] = useState('');
@@ -37,6 +41,7 @@ export default function IPATPage() {
     fetchRanking();
     fetchChat();
     fetchAuctions();
+    fetchPastResults();
   }, []);
 
   useEffect(() => {
@@ -60,41 +65,66 @@ export default function IPATPage() {
   }, [currentUser, selectedRaceNo]);
 
   const fetchRaces = async () => {
-    const { data } = await supabase.from('races').select('*');
-    if (data) setRaces([...data].sort((a, b) => (a.race_number || 0) - (b.race_number || 0)));
+    try {
+      const { data } = await supabase.from('races').select('*');
+      if (data) setRaces([...data].sort((a, b) => (a.race_number || 0) - (b.race_number || 0)));
+    } catch (e) { console.error(e); }
   };
 
   const fetchNews = async () => {
-    const { data } = await supabase.from('news').select('*');
-    if (data) {
-      setNewsList([...data].reverse());
-    } else {
-      const local = JSON.parse(localStorage.getItem('app_news_list') || '[]');
-      setNewsList(local);
-    }
+    try {
+      const { data, error } = await supabase.from('news').select('*');
+      if (data && !error) {
+        setNewsList([...data].reverse());
+      } else {
+        const local = JSON.parse(localStorage.getItem('app_news_list') || '[]');
+        setNewsList(local);
+      }
+    } catch (e) { console.error(e); }
   };
 
   const fetchRanking = async () => {
-    const { data } = await supabase.from('users').select('*');
-    if (data) {
-      const sorted = [...data].sort((a, b) => (b.balance || 0) - (a.balance || 0));
-      setRankingUsers(sorted);
-    }
+    try {
+      const { data } = await supabase.from('users').select('*');
+      if (data) {
+        const sorted = [...data].sort((a, b) => (b.balance || 0) - (a.balance || 0));
+        setRankingUsers(sorted);
+      }
+    } catch (e) { console.error(e); }
   };
 
   const fetchChat = async () => {
-    const { data } = await supabase.from('inquiries').select('*').eq('title', '【パット雑談チャット】');
-    if (data) {
-      setChatMessages([...data].reverse());
-    } else {
-      const local = JSON.parse(localStorage.getItem('app_paddock_chat') || '[]');
-      setChatMessages(local);
-    }
+    try {
+      const { data, error } = await supabase.from('inquiries').select('*').eq('title', '【パット雑談チャット】');
+      if (data && !error) {
+        setChatMessages([...data].reverse());
+      } else {
+        const local = JSON.parse(localStorage.getItem('app_paddock_chat') || '[]');
+        setChatMessages(local);
+      }
+    } catch (e) { console.error(e); }
   };
 
   const fetchAuctions = async () => {
-    const { data } = await supabase.from('auctions').select('*').eq('status', 'active');
-    if (data) setAuctions(data);
+    try {
+      const { data } = await supabase.from('auctions').select('*').eq('status', 'active');
+      if (data) setAuctions(data);
+    } catch (e) { console.error(e); }
+  };
+
+  // 🗞️ 馬柱用の全頭戦績ロード
+  const fetchPastResults = async () => {
+    try {
+      const { data } = await supabase.from('horse_results').select('*');
+      if (data) {
+        const map: { [key: string]: any[] } = {};
+        data.forEach((r) => {
+          if (!map[r.horse_name]) map[r.horse_name] = [];
+          map[r.horse_name].push(r);
+        });
+        setPastResults(map);
+      }
+    } catch (e) { console.error(e); }
   };
 
   const checkDailyBonus = () => {
@@ -369,9 +399,9 @@ export default function IPATPage() {
             <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '24px', overflowX: 'auto' }}>
               <TabBtn active={mainTab === 'bet'} onClick={() => setMainTab('bet')} text={isFinished ? '🏁 レース確定結果・払戻金' : '🎫 馬券投票'} />
               <TabBtn active={mainTab === 'history'} onClick={() => setMainTab('history')} text={`📋 履歴 (${myBets.length})`} />
-              <TabBtn active={mainTab === 'auction'} onClick={() => setMainTab('auction')} text={`🔨 セリ市・オークション (${auctions.length})`} />
+              <TabBtn active={mainTab === 'auction'} onClick={() => setMainTab('auction')} text={`🔨 セリ市 (${auctions.length})`} />
               <TabBtn active={mainTab === 'ranking'} onClick={() => setMainTab('ranking')} text="👑 資産ランキング" />
-              <TabBtn active={mainTab === 'chat'} onClick={() => setMainTab('chat')} text="💬 パドック予想掲示板" />
+              <TabBtn active={mainTab === 'chat'} onClick={() => setMainTab('chat')} text="💬 パドック雑談" />
               <TabBtn active={mainTab === 'news'} onClick={() => setMainTab('news')} text={`📢 アプデ (${newsList.length})`} />
             </div>
 
@@ -514,56 +544,72 @@ export default function IPATPage() {
                   </form>
                 )}
 
+                {/* 🗞️ netkeiba風 本格馬柱 ＆ リアルタイムオッズ出走表 */}
                 <h3 style={{ margin: '0 0 16px 0', color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {isFinished ? '🏁 レース確定結果順位表' : '🗞️ 競馬新聞 ＆ リアルタイムオッズ出走表'}
+                  {isFinished ? '🏁 レース確定結果順位表' : '🗞️ netkeiba風 馬柱出走表 ＆ 近走成績'}
                 </h3>
 
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', borderRadius: '12px', overflow: 'hidden', border: '1px solid #cbd5e1' }}>
                   <thead>
                     <tr style={{ backgroundColor: '#1e3a8a', color: '#fff', textAlign: 'left' }}>
-                      <th style={{ padding: '12px', textAlign: 'center', width: '60px' }}>印</th>
-                      <th style={{ padding: '12px', textAlign: 'center', width: '50px' }}>{isFinished ? '着順' : '馬番'}</th>
-                      <th>馬名</th>
-                      <th>調教/気配</th>
-                      <th>騎手</th>
-                      <th>記者短評</th>
-                      <th style={{ textAlign: 'right', paddingRight: '20px' }}>{isFinished ? '確定オッズ' : '単勝オッズ'}</th>
+                      <th style={{ padding: '10px', textAlign: 'center', width: '40px' }}>印</th>
+                      <th style={{ padding: '10px', textAlign: 'center', width: '40px' }}>{isFinished ? '着' : '枠'}</th>
+                      <th style={{ width: '150px' }}>馬名 / 騎手</th>
+                      <th>前走 (1走前)</th>
+                      <th>前々走 (2走前)</th>
+                      <th style={{ textAlign: 'right', paddingRight: '16px', width: '90px' }}>オッズ</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(isFinished ? resultHorses : horses).map((h, idx) => {
                       const finishRank = idx + 1;
-                      const isRank1 = isFinished && finishRank === 1;
-                      const isRank2 = isFinished && finishRank === 2;
-                      const isRank3 = isFinished && finishRank === 3;
+                      const hResults = pastResults[h.name] || [];
+                      const last1 = hResults[hResults.length - 1];
+                      const last2 = hResults[hResults.length - 2];
 
                       return (
-                        <tr
-                          key={h.id}
-                          style={{
-                            borderBottom: '1px solid #f1f5f9',
-                            backgroundColor: isRank1 ? '#fefce8' : isRank2 ? '#f8fafc' : isRank3 ? '#fff7ed' : '#ffffff',
-                          }}
-                        >
-                          <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '18px', color: '#dc2626' }}>
+                        <tr key={h.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: '#ffffff' }}>
+                          <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '16px', color: '#dc2626' }}>
                             {h.mark || (idx === 0 ? '◎' : idx === 1 ? '○' : idx === 2 ? '▲' : '△')}
                           </td>
-                          <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', fontSize: '15px' }}>
-                            {isFinished ? (
-                              isRank1 ? <span style={{ color: '#ca8a04', fontWeight: '900' }}>🥇1着</span> :
-                              isRank2 ? <span style={{ color: '#475569', fontWeight: '900' }}>🥈2着</span> :
-                              isRank3 ? <span style={{ color: '#c2410c', fontWeight: '900' }}>🥉3着</span> :
-                              `${finishRank}着`
+                          <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '14px' }}>
+                            {isFinished ? `${finishRank}着` : h.horse_number}
+                          </td>
+                          <td style={{ padding: '8px' }}>
+                            <div style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '14px' }}>🐎 {h.name}</div>
+                            <div style={{ color: '#2563eb', fontSize: '12px', fontWeight: 'bold', marginTop: '2px' }}>🏇 {h.jockey}</div>
+                          </td>
+
+                          {/* 前走成績 */}
+                          <td style={{ padding: '8px', backgroundColor: '#f8fafc', fontSize: '12px' }}>
+                            {last1 ? (
+                              <div>
+                                <span style={{ fontWeight: 'bold', color: last1.rank_result === 1 ? '#ca8a04' : '#1e3a8a' }}>
+                                  {last1.rank_result}着 / {last1.race_name}
+                                </span>
+                                <div style={{ color: '#64748b' }}>🏇 {last1.jockey}</div>
+                              </div>
                             ) : (
-                              h.horse_number
+                              <span style={{ color: '#cbd5e1' }}>前走なし (新馬)</span>
                             )}
                           </td>
-                          <td style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '15px' }}>🐎 {h.name}</td>
-                          <td><span style={{ backgroundColor: '#f1f5f9', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', color: '#475569' }}>{h.training_status || '絶好調 A'}</span></td>
-                          <td style={{ color: '#2563eb', fontWeight: 'bold' }}>🏇 {h.jockey}</td>
-                          <td style={{ fontSize: '12px', color: '#64748b' }}>{h.comment || '気配上々、一発に期待'}</td>
-                          <td style={{ textAlign: 'right', paddingRight: '20px' }}>
-                            <span style={{ fontSize: '16px', fontWeight: '900', color: '#dc2626' }}>
+
+                          {/* 前々走成績 */}
+                          <td style={{ padding: '8px', backgroundColor: '#f8fafc', fontSize: '12px' }}>
+                            {last2 ? (
+                              <div>
+                                <span style={{ fontWeight: 'bold', color: last2.rank_result === 1 ? '#ca8a04' : '#1e3a8a' }}>
+                                  {last2.rank_result}着 / {last2.race_name}
+                                </span>
+                                <div style={{ color: '#64748b' }}>🏇 {last2.jockey}</div>
+                              </div>
+                            ) : (
+                              <span style={{ color: '#cbd5e1' }}>-</span>
+                            )}
+                          </td>
+
+                          <td style={{ textAlign: 'right', paddingRight: '16px' }}>
+                            <span style={{ fontSize: '15px', fontWeight: '900', color: '#dc2626' }}>
                               {h.calculatedOdds || h.manual_odds || 5.0} 倍
                             </span>
                           </td>
