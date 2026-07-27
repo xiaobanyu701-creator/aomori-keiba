@@ -8,7 +8,7 @@ export default function SuperAdminConsole() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
 
-  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit' | 'news_edit' | 'pedigree_admin' | 'chat_admin' | 'auction_admin'>('users');
+  const [adminTab, setAdminTab] = useState<'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 'owner_assign' | 'users' | 'breed_edit' | 'news_edit' | 'pedigree_admin' | 'chat_admin' | 'auction_admin' | 'bulk_import' | 'pool_monitor'>('users');
 
   const [races, setRaces] = useState<any[]>([]);
   const [selectedRaceNo, setSelectedRaceNo] = useState<number>(1);
@@ -50,6 +50,12 @@ export default function SuperAdminConsole() {
   const [officialHorseName, setOfficialHorseName] = useState('');
   const [officialStartPrice, setOfficialStartPrice] = useState<number>(1000000);
 
+  // ⚡ 出走馬一括テキスト登録用
+  const [bulkImportText, setBulkImportText] = useState('');
+
+  // 📊 レース別リアルタイムプール監視用
+  const [allBets, setAllBets] = useState<any[]>([]);
+
   // レース設定用
   const [editTitle, setEditTitle] = useState('');
   const [editDistance, setEditDistance] = useState(1600);
@@ -77,7 +83,7 @@ export default function SuperAdminConsole() {
 
   useEffect(() => { 
     if (isAuthenticated) { 
-      fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters(); fetchNews(); fetchChat();
+      fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters(); fetchNews(); fetchChat(); fetchAllBets();
       const cfg = Number(localStorage.getItem('daily_bonus_amount') || 100000);
       setDailyBonusConfig(cfg);
       const sRate = Number(localStorage.getItem('training_success_rate') || 70);
@@ -204,7 +210,67 @@ export default function SuperAdminConsole() {
     }
   };
 
-  // 🛠️ 100%確実にレース名・条件を保存・新規登録（UPSERT）する処理
+  const fetchAllBets = async () => {
+    const { data } = await supabase.from('bets').select('*');
+    if (data) setAllBets(data);
+  };
+
+  // ⚡ 機能2: 12R一括ステータス変更（一括オープン / 一括締切）
+  const handleBulkSetRaceStatus = async (status: 'open' | 'closed') => {
+    const label = status === 'open' ? '🟢 一括受付開始' : '🔒 一括投票締切';
+    if (!confirm(`1R〜12Rのすべてのレースを【 ${label} 】に変更しますか？`)) return;
+
+    for (const r of races) {
+      await supabase.from('races').update({ status }).eq('id', r.id);
+    }
+    alert(`⚡ 1R〜12Rすべてを【 ${label} 】に一括変更しました！`);
+    fetchRaces();
+  };
+
+  // 🧹 機能2: 開催一括リセット・クリア
+  const handleResetAllRaces = async () => {
+    if (!confirm('⚠️ 警告: 1R〜12Rのすべての「出走馬」「投票データ」「着順確定」をまっさらにリセットしますか？')) return;
+    await supabase.from('horses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await supabase.from('bets').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    for (const r of races) {
+      await supabase.from('races').update({ status: 'open', first_horse: null, second_horse: null, third_horse: null }).eq('id', r.id);
+    }
+    alert('🧹 全12Rの開催データをまっさらにリセットしました！');
+    fetchRaces(); fetchAllBets();
+  };
+
+  // 📝 機能4: 出走馬テキスト一括登録
+  const handleBulkImportHorses = async () => {
+    if (!bulkImportText.trim() || !currentRace?.id) return alert('テキストを入力し、対象レースを選択してください');
+    
+    // 行ごとに分解: 例 "1,カマクラドリーム,武豊,3"
+    const lines = bulkImportText.trim().split('\n');
+    let count = 0;
+
+    for (const line of lines) {
+      const parts = line.split(',').map(p => p.trim());
+      if (parts.length >= 2) {
+        const hNo = Number(parts[0]) || (count + 1);
+        const name = parts[1];
+        const jockey = parts[2] || 'ルメール';
+        const age = Number(parts[3]) || 3;
+
+        await supabase.from('horses').insert([{
+          race_id: currentRace.id,
+          horse_number: hNo,
+          name: name,
+          jockey: jockey,
+          age: age,
+        }]);
+        count++;
+      }
+    }
+
+    alert(`🎉 【${selectedRaceNo}R】に ${count}頭 の出走馬をテキストから一括登録しました！`);
+    setBulkImportText('');
+    fetchHorses(currentRace.id);
+  };
+
   const handleUpdateRaceInfo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editTitle.trim()) return alert('レース名を入力してください');
@@ -546,6 +612,8 @@ export default function SuperAdminConsole() {
         <div style={{ display: 'flex', flexDirection: 'column', padding: '16px 8px', gap: '8px', flex: 1 }}>
           <div style={{ fontSize: '12px', color: '#93c5fd', fontWeight: 'bold', padding: '0 8px', marginTop: '8px' }}>マスター・全体管理</div>
           <SideButton active={adminTab === 'users'} onClick={() => setAdminTab('users')} icon="👤" text="プレイヤー管理 (お金/称号/削除)" />
+          <SideButton active={adminTab === 'pool_monitor'} onClick={() => setAdminTab('pool_monitor')} icon="📊" text="投票プール＆偏りリアルタイム監視" />
+          <SideButton active={adminTab === 'bulk_import'} onClick={() => setAdminTab('bulk_import')} icon="📝" text="出走馬テキスト爆速一括登録" />
           <SideButton active={adminTab === 'auction_admin'} onClick={() => setAdminTab('auction_admin')} icon="🔨" text="公式セレクトセール出品" />
           <SideButton active={adminTab === 'breed_edit'} onClick={() => setAdminTab('breed_edit')} icon="🧬" text="生産馬 個別確認・編集" />
           <SideButton active={adminTab === 'pedigree_admin'} onClick={() => setAdminTab('pedigree_admin')} icon="🧬" text="血統マスター管理" />
@@ -555,7 +623,7 @@ export default function SuperAdminConsole() {
           <SideButton active={adminTab === 'horse_masters'} onClick={() => setAdminTab('horse_masters')} icon="🐎" text="現役競走馬マスター" />
 
           <div style={{ fontSize: '12px', color: '#93c5fd', fontWeight: 'bold', padding: '0 8px', marginTop: '24px' }}>レース管理 (1〜12R)</div>
-          <SideButton active={adminTab === 'race'} onClick={() => setAdminTab('race')} icon="🛠️" text="レース条件設定 / G1重賞 / 締切" />
+          <SideButton active={adminTab === 'race'} onClick={() => setAdminTab('race')} icon="🛠️" text="レース条件設定 / 一括締切" />
           <SideButton active={adminTab === 'horses'} onClick={() => setAdminTab('horses')} icon="🐴" text="出走馬追加・新聞印編集" />
           <SideButton active={adminTab === 'odds'} onClick={() => setAdminTab('odds')} icon="📈" text="オッズ管理 (AI)" />
           <SideButton active={adminTab === 'settle'} onClick={() => setAdminTab('settle')} icon="🏆" text="着順確定＆自動振込" />
@@ -588,74 +656,139 @@ export default function SuperAdminConsole() {
 
         <div style={{ maxWidth: '1000px' }}>
 
-          {/* 🛠️ TAB: レース条件 ＆ レース名 ＆ G1重賞 ＆ 締切 */}
+          {/* ⚡ 機能2: 12R一括コントロール ＆ 開催リセット ＆ 個別条件設定 */}
           {adminTab === 'race' && (
-            <div style={{ backgroundColor: '#ffffff', padding: '28px', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '650px' }}>
-              <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '20px' }}>🛠️ 【{selectedRaceNo}R】 レース条件 ＆ レース名 ＆ G1重賞格付け ＆ 投票締切</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               
-              <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '12px', border: '2px solid #cbd5e1', marginBottom: '24px' }}>
-                <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#475569', marginBottom: '12px' }}>現在の投票ステータス: {currentRace?.status === 'closed' ? '🔒 締め切り中' : '🟢 投票受付中'}</div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <button onClick={() => handleToggleRaceStatus('closed')} style={{ flex: 1, backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-                    🔒 投票締切実行
+              {/* ⚡ 一括操作コントロール */}
+              <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '16px', border: '2px solid #2563eb' }}>
+                <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '18px' }}>⚡ 1R〜12R 一括状態コントロール ＆ 開催クリア</h3>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <button onClick={() => handleBulkSetRaceStatus('open')} style={{ flex: 1, backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
+                    🟢 全12R 一括受付開始
                   </button>
-                  <button onClick={() => handleToggleRaceStatus('open')} style={{ flex: 1, backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-                    🔓 締切解除 (受付再開)
+                  <button onClick={() => handleBulkSetRaceStatus('closed')} style={{ flex: 1, backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
+                    🔒 全12R 一括投票締切
+                  </button>
+                  <button onClick={handleResetAllRaces} style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '14px 20px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
+                    🧹 全12R 開催クリア
                   </button>
                 </div>
               </div>
 
-              <form onSubmit={handleUpdateRaceInfo} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <label style={labelStyle}>レース名 (出走表に即時反映)</label>
-                  <input type="text" placeholder="例: 青森県ダービー" value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#1e3a8a' }} required />
-                </div>
+              {/* 🛠️ 個別レース条件設定 */}
+              <div style={{ backgroundColor: '#ffffff', padding: '28px', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '650px' }}>
+                <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '20px' }}>🛠️ 【{selectedRaceNo}R】 レース条件 ＆ レース名 ＆ G1重賞格付け ＆ 締切</h3>
                 
-                <div>
-                  <label style={labelStyle}>🏆 レース格付け（重賞グレード）</label>
-                  <select value={editGrade} onChange={e=>setEditGrade(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: editGrade === 'G1' ? '#dc2626' : editGrade === 'G2' ? '#d97706' : '#2563eb' }}>
-                    <option value="一般">一般競走</option>
-                    <option value="G3">G3 重賞</option>
-                    <option value="G2">G2 重賞</option>
-                    <option value="G1">G1 最高峰競走</option>
-                  </select>
+                <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '12px', border: '2px solid #cbd5e1', marginBottom: '24px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#475569', marginBottom: '12px' }}>現在の投票ステータス: {currentRace?.status === 'closed' ? '🔒 締め切り中' : '🟢 投票受付中'}</div>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button onClick={() => handleToggleRaceStatus('closed')} style={{ flex: 1, backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
+                      🔒 投票締切実行
+                    </button>
+                    <button onClick={() => handleToggleRaceStatus('open')} style={{ flex: 1, backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
+                      🔓 締切解除 (受付再開)
+                    </button>
+                  </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                  <div><label style={labelStyle}>距離 (m)</label><input type="number" step="100" value={editDistance} onChange={e=>setEditDistance(Number(e.target.value))} style={inputStyle} /></div>
-                  <div><label style={labelStyle}>馬場状態</label><select value={editCondition} onChange={e=>setEditCondition(e.target.value)} style={inputStyle}><option value="良">良</option><option value="稍重">稍重</option><option value="重">重</option><option value="不良">不良</option></select></div>
-                  <div><label style={labelStyle}>天候</label><select value={editWeather} onChange={e=>setEditWeather(e.target.value)} style={inputStyle}><option value="晴">晴</option><option value="曇">曇</option><option value="雨">雨</option><option value="雪">雪</option></select></div>
-                </div>
-                <div>
-                  <label style={labelStyle}>💰 1着総賞金 (G) ※勝った馬主へ10%手当が自動支給されます</label>
-                  <input type="number" step="100000" value={editPrize} onChange={e=>setEditPrize(Number(e.target.value))} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }} />
-                </div>
-                <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '16px', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-                  レース名・条件・格付けを保存 💾
-                </button>
-              </form>
+                <form onSubmit={handleUpdateRaceInfo} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>レース名 (出走表に即時反映)</label>
+                    <input type="text" placeholder="例: 青森県ダービー" value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: '#1e3a8a' }} required />
+                  </div>
+                  
+                  <div>
+                    <label style={labelStyle}>🏆 レース格付け（重賞グレード）</label>
+                    <select value={editGrade} onChange={e=>setEditGrade(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', color: editGrade === 'G1' ? '#dc2626' : editGrade === 'G2' ? '#d97706' : '#2563eb' }}>
+                      <option value="一般">一般競走</option>
+                      <option value="G3">G3 重賞</option>
+                      <option value="G2">G2 重賞</option>
+                      <option value="G1">G1 最高峰競走</option>
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                    <div><label style={labelStyle}>距離 (m)</label><input type="number" step="100" value={editDistance} onChange={e=>setEditDistance(Number(e.target.value))} style={inputStyle} /></div>
+                    <div><label style={labelStyle}>馬場状態</label><select value={editCondition} onChange={e=>setEditCondition(e.target.value)} style={inputStyle}><option value="良">良</option><option value="稍重">稍重</option><option value="重">重</option><option value="不良">不良</option></select></div>
+                    <div><label style={labelStyle}>天候</label><select value={editWeather} onChange={e=>setEditWeather(e.target.value)} style={inputStyle}><option value="晴">晴</option><option value="曇">曇</option><option value="雨">雨</option><option value="雪">雪</option></select></div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>💰 1着総賞金 (G) ※勝った馬主へ10%手当が自動支給されます</label>
+                    <input type="number" step="100000" value={editPrize} onChange={e=>setEditPrize(Number(e.target.value))} style={{ ...inputStyle, fontWeight: 'bold', color: '#16a34a' }} />
+                  </div>
+                  <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '16px', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
+                    レース名・条件・格付けを保存 💾
+                  </button>
+                </form>
+              </div>
             </div>
           )}
 
-          {/* 🔨 TAB: 運営公式セレクトセール出品 */}
-          {adminTab === 'auction_admin' && (
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0', maxWidth: '600px' }}>
-              <h2 style={{ margin: '0 0 16px 0', color: '#d97706', fontSize: '20px', fontWeight: 'bold' }}>
-                🔨 運営公式 セレクトセール出品
+          {/* 📊 機能3: リアルタイム総プール ＆ 投票偏り監視パネル */}
+          {adminTab === 'pool_monitor' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h2 style={{ margin: 0, color: '#1e3a8a', fontSize: '20px', fontWeight: 'bold' }}>📊 リアルタイム総プール ＆ 投票偏り監視</h2>
+                <button onClick={fetchAllBets} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>🔄 最新データを更新</button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map(no => {
+                  const r = races.find(race => race.race_number === no);
+                  const raceBets = allBets.filter(b => String(b.race_id) === String(r?.id));
+                  const totalG = raceBets.reduce((sum, b) => sum + Number(b.amount || 0), 0);
+
+                  return (
+                    <div key={no} style={{ backgroundColor: '#f8fafc', padding: '16px 20px', borderRadius: '12px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ fontWeight: 'bold', fontSize: '16px', color: '#1e3a8a' }}>【{no}R】{r?.title || '未設定'}</span>
+                        <span style={{ marginLeft: '12px', fontSize: '13px', color: '#64748b' }}>総投票件数: {raceBets.length}件</span>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: '12px', color: '#64748b', display: 'block' }}>総プール額</span>
+                        <strong style={{ fontSize: '20px', color: '#16a34a', fontWeight: '900' }}>{totalG.toLocaleString()} G</strong>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 📝 機能4: 出走馬テキスト一括登録 */}
+          {adminTab === 'bulk_import' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0', maxWidth: '650px' }}>
+              <h2 style={{ margin: '0 0 12px 0', color: '#1e3a8a', fontSize: '20px', fontWeight: 'bold' }}>
+                📝 出走馬テキスト爆速一括登録
               </h2>
-              <form onSubmit={handleAddOfficialAuction} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <label style={labelStyle}>目玉競走馬の名前</label>
-                  <input type="text" placeholder="例: ★SS確定 サンデーサイレンス産駒" value={officialHorseName} onChange={e=>setOfficialHorseName(e.target.value)} style={inputStyle} required />
-                </div>
-                <div>
-                  <label style={labelStyle}>最低開始価格 (G)</label>
-                  <input type="number" step="100000" value={officialStartPrice} onChange={e=>setOfficialStartPrice(Number(e.target.value))} style={inputStyle} required />
-                </div>
-                <button type="submit" style={{ padding: '14px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-                  👑 運営公式セレクトセールに目玉馬を出品する 🔨
-                </button>
-              </form>
+              <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '16px', lineHeight: '1.5' }}>
+                カンマ区切り（`馬番, 馬名, 騎手, 年齢`）で1行ずつ貼り付けると、一瞬で出走表へ登録されます！<br/>
+                例:<br/>
+                <code>1, カマクラドリーム, 武豊, 3</code><br/>
+                <code>2, ツガルキング, ルメール, 4</code>
+              </p>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={labelStyle}>対象レースを選択</label>
+                <select value={selectedRaceNo} onChange={e => setSelectedRaceNo(Number(e.target.value))} style={inputStyle}>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map(no => (
+                    <option key={no} value={no}>{no}R ({races.find(r=>r.race_number===no)?.title || '未設定'})</option>
+                  ))}
+                </select>
+              </div>
+
+              <textarea
+                rows={8}
+                placeholder="1, カマクラドリーム, 武豊, 3&#10;2, ツガルキング, ルメール, 4"
+                value={bulkImportText}
+                onChange={e => setBulkImportText(e.target.value)}
+                style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '14px', resize: 'vertical', marginBottom: '16px' }}
+              />
+
+              <button onClick={handleBulkImportHorses} style={{ width: '100%', padding: '16px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
+                【{selectedRaceNo}R】にテキストから一括登録する 📝
+              </button>
             </div>
           )}
 
@@ -750,6 +883,28 @@ export default function SuperAdminConsole() {
                   <button onClick={handleSaveBonusConfig} style={{ padding: '12px 20px', backgroundColor: '#ca8a04', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>保存 💾</button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* 🔨 TAB: 運営公式セレクトセール出品 */}
+          {adminTab === 'auction_admin' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px', border: '1px solid #e2e8f0', maxWidth: '600px' }}>
+              <h2 style={{ margin: '0 0 16px 0', color: '#d97706', fontSize: '20px', fontWeight: 'bold' }}>
+                🔨 運営公式 セレクトセール出品
+              </h2>
+              <form onSubmit={handleAddOfficialAuction} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={labelStyle}>目玉競走馬の名前</label>
+                  <input type="text" placeholder="例: ★SS確定 サンデーサイレンス産駒" value={officialHorseName} onChange={e=>setOfficialHorseName(e.target.value)} style={inputStyle} required />
+                </div>
+                <div>
+                  <label style={labelStyle}>最低開始価格 (G)</label>
+                  <input type="number" step="100000" value={officialStartPrice} onChange={e=>setOfficialStartPrice(Number(e.target.value))} style={inputStyle} required />
+                </div>
+                <button type="submit" style={{ padding: '14px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
+                  👑 運営公式セレクトセールに目玉馬を出品する 🔨
+                </button>
+              </form>
             </div>
           )}
 
