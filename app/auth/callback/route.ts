@@ -13,6 +13,6 @@ export async function GET(request: Request) {
     await supabase.auth.exchangeCodeForSession(code);
   }
 
-  // 認証完了後、トップページへリダイレクト
+  // 認証完了後、トップページへ移動
   return NextResponse.redirect(requestUrl.origin);
 }
