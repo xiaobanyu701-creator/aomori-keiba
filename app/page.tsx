@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
+import { saveSessionToken, checkAutoLogin, logoutUser } from '@/lib/auth';
+import { getAiTrackmanComment } from '@/lib/aiEngine';
 
 export default function IPATPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -42,6 +44,15 @@ export default function IPATPage() {
   const [detailModalHorse, setDetailModalHorse] = useState<any>(null);
 
   useEffect(() => {
+    // 🔑 トークンによる自動ログインチェック
+    const initAuth = async () => {
+      const autoUser = await checkAutoLogin();
+      if (autoUser) {
+        setCurrentUser(autoUser);
+      }
+    };
+    initAuth();
+
     fetchRaces();
     fetchNews();
     fetchRanking();
@@ -243,7 +254,7 @@ export default function IPATPage() {
     if (data) setMyBets([...data].reverse());
   };
 
-  // 🛡️ IP判定 ＋ 既存ユーザーログイン時IP自動更新機能
+  // 🛡️ IP判定 ＋ トークン発行ログイン機能
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!discordInput || !pinInput) return alert('名前とPINコードを入力してください');
@@ -266,6 +277,8 @@ export default function IPATPage() {
           await supabase.from('users').update({ ip_address: userIp }).eq('id', exUser.id);
           exUser.ip_address = userIp;
         }
+        // 🔑 トークンを発行して保存（自動ログイン有効化）
+        await saveSessionToken(exUser);
         setCurrentUser(exUser);
       } else {
         alert('PINコードが違います');
@@ -298,6 +311,8 @@ export default function IPATPage() {
         }
 
         if (inserted && inserted.length > 0) {
+          // 🔑 トークンを発行して保存
+          await saveSessionToken(inserted[0]);
           setCurrentUser(inserted[0]);
           alert('🎉 登録完了！ 10,000,000 G 付与！');
         }
@@ -305,7 +320,11 @@ export default function IPATPage() {
     }
   };
 
-  const handleSignOut = () => {
+  // 🚪 ログアウト処理（トークン削除）
+  const handleSignOut = async () => {
+    if (currentUser) {
+      await logoutUser(currentUser.id);
+    }
     setCurrentUser(null);
   };
 
@@ -379,18 +398,6 @@ export default function IPATPage() {
     fetchMyBets();
     if (currentRace.id) fetchHorsesAndOnlineOdds(currentRace.id);
     fetchRanking();
-  };
-
-  // 🗣️ AIトラックマン動的パドックコメント生成エンジン（新機能）
-  const getAiTrackmanComment = (horse: any) => {
-    const odds = Number(horse.calculatedOdds || horse.manual_odds || 5.0);
-    if (odds <= 2.5) {
-      return '🗣️ 【AIパドック解説】 追い切りの動きは破格！気合十分で毛ツヤも冴え渡り、ここは勝ち負け必至の出来。';
-    } else if (odds <= 6.0) {
-      return '🗣️ 【AIパドック解説】 好仕上がりをキープ。距離適性も高く、展開ひとつで首位争いに加わる一頭。';
-    } else {
-      return '🗣️ 【AIパドック解説】 重馬場や展開の助けが必要か。一発穴をあける潜在能力はある。';
-    }
   };
 
   const isFinished = currentRace?.status === 'finished';
@@ -1067,7 +1074,7 @@ export default function IPATPage() {
 
             {/* 🗣️ AIトラックマン自動解説パネル */}
             <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', padding: '12px', borderRadius: '10px', marginBottom: '14px', fontSize: '12px', color: '#1e3a8a', lineHeight: '1.5', fontWeight: 'bold' }}>
-              {getAiTrackmanComment(detailModalHorse)}
+              {getAiTrackmanComment(Number(detailModalHorse.calculatedOdds || detailModalHorse.manual_odds || 5.0))}
             </div>
 
             <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
