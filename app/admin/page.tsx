@@ -917,7 +917,7 @@ export default function SuperAdminConsole() {
           if (trio.length === 3 && trio.every(h => top3.includes(h))) {
             isWin = true; winOdds = 22.0;
           }
-        } else if (bet.bet_type === '3連単' && sel === `${rank1}-${rank2}-${rank3}`) {
+        } else if (bet.bet_type === '3连単' && sel === `${rank1}-${rank2}-${rank3}`) {
           isWin = true; winOdds = 65.0;
         }
 
@@ -992,12 +992,13 @@ ${aiDigest}
     }
 
     if (!isIpAllowed) {
+      // 🔒 修正：Discord通知からIPアドレスの非表示化
       sendDiscordNotification(
-        '🚨 未許可IPからの管理者ログイン試行遮断！',
-        `管理者未登録のIPアドレス (**${adminIp}**) からアクセス試行がありました！`,
+        '🚨 未許可端末からの管理者ログイン試行遮断！',
+        `管理者未登録の端末からアクセス試行がありました！`,
         0xef4444
       );
-      return alert(`❌ アクセス拒否: あなたのIPアドレス (${adminIp}) は許可された管理者IPリストに登録されていません。`);
+      return alert(`❌ アクセス拒否: あなたの端末IP (${adminIp}) は許可された管理者IPリストに登録されていません。`);
     }
 
     const expectedPin = process.env.NEXT_PUBLIC_ADMIN_PIN || '0302';
@@ -1012,9 +1013,10 @@ ${aiDigest}
 
       logAdminAction('管理者ログイン', '暗証番号認証成功によりログイン', adminIp);
 
+      // 🔒 修正：Discord通知からIPアドレスの非表示化
       sendDiscordNotification(
         '🟢 管理者ログイン成功',
-        `管理者画面へ正しくログインされました。（IP: ${adminIp}）`,
+        `管理者画面へ正しくログインされました。`,
         0x16a34a
       );
     } else {
@@ -1029,9 +1031,10 @@ ${aiDigest}
 
         logAdminAction('ログイン3回失敗ロック', 'ミス過多により15分間自動ロック起動', adminIp);
 
+        // 🔒 修正：Discord通知からIPアドレスの非表示化
         sendDiscordNotification(
           '🚨 【警告】 管理者ログイン 3回連続失敗！自動ロック起動',
-          `暗証番号が3回連続で間違えられたため、15分間の自動ロックを起動しました！\n試行IP: **${adminIp}**`,
+          `暗証番号が3回連続で間違えられたため、15分間の自動ロックを起動しました！`,
           0xef4444
         );
 
@@ -1053,8 +1056,8 @@ ${aiDigest}
         <h2 style={{ color: '#1e3a8a', margin: '0 0 10px 0', fontSize: '20px', fontWeight: 'bold' }}>🍏 運営管理者ログイン</h2>
         
         <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '16px' }}>
-          接続元IP: <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: isIpAllowed ? '#16a34a' : '#ef4444' }}>{adminIp || '取得中...'}</span>
-          {!isIpAllowed && <div style={{ color: '#ef4444', fontWeight: 'bold', marginTop: '2px' }}>⚠️ 未許可IP（アクセス不可）</div>}
+          接続状態: <span style={{ fontWeight: 'bold', color: isIpAllowed ? '#16a34a' : '#ef4444' }}>{isIpAllowed ? '🟢 許可端末' : '🔴 未許可端末'}</span>
+          {!isIpAllowed && <div style={{ color: '#ef4444', fontWeight: 'bold', marginTop: '2px' }}>⚠️ 未許可端末（アクセス不可）</div>}
         </div>
 
         {lockUntil && Date.now() < lockUntil ? (
@@ -1156,7 +1159,7 @@ ${aiDigest}
 
         <div style={{ maxWidth: '950px', margin: '0 auto' }}>
 
-          {/* 📝 新機能：管理者3人の操作履歴ログ監視タブ */}
+          {/* 📝 管理者3人の操作履歴ログ監視タブ */}
           {adminTab === 'admin_logs' && (
             <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -1216,6 +1219,7 @@ ${aiDigest}
           {adminTab === 'users' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               
+              {/* 🔑 セッショントークン管理コントロール */}
               <div style={{ backgroundColor: '#eff6ff', border: '2px solid #2563eb', borderRadius: '16px', padding: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h3 style={{ margin: 0, color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
