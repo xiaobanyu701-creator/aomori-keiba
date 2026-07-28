@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { sendDiscordNotification } from '@/lib/discord';
+import { parseUserAgent } from '@/lib/auth';
 
 export default function SuperAdminConsole() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -941,7 +942,7 @@ ${aiDigest}
 
         {/* ナビゲーションタブ */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px' }}>
-          <NavChip active={adminTab === 'users'} onClick={() => setAdminTab('users')} text="👥 プレイヤー・IP/トークン照合" />
+          <NavChip active={adminTab === 'users'} onClick={() => setAdminTab('users')} text="👥 プレイヤー・IP/端末照合" />
           <NavChip active={adminTab === 'race'} onClick={() => setAdminTab('race')} text="⚡ 12R一括/時刻設定/返金" />
           <NavChip active={adminTab === 'horses'} onClick={() => setAdminTab('horses')} text="🗞️ 出走馬/AIオッズ/新聞" />
           <NavChip active={adminTab === 'anomaly_detect'} onClick={() => setAdminTab('anomaly_detect')} text={`⚠️ 異常検知 (${suspiciousBets.length})`} />
@@ -978,7 +979,7 @@ ${aiDigest}
 
         <div style={{ maxWidth: '950px', margin: '0 auto' }}>
 
-          {/* 👥 プレイヤー管理 (トークン・IP・各種操作) */}
+          {/* 👥 プレイヤー管理 (トークン・IP・端末・各種操作) */}
           {adminTab === 'users' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               
@@ -1081,10 +1082,10 @@ ${aiDigest}
                 )}
               </div>
 
-              {/* 🌐 IP ＆ トークン照合テーブル */}
+              {/* 🌐 IP ＆ トークン ＆ 端末（User-Agent）照合テーブル */}
               <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
-                  🌐 ユーザー登録IP ＆ トークン接続管理（複アカ照合・リモート切断）
+                  🌐 ユーザー登録IP ＆ 端末管理（複アカ照合・端末特定・リモート切断）
                 </h3>
 
                 <div style={{ marginBottom: '12px' }}>
@@ -1098,12 +1099,13 @@ ${aiDigest}
                 </div>
 
                 <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '600px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '750px' }}>
                     <thead>
                       <tr style={{ backgroundColor: '#1e3a8a', color: '#fff', textAlign: 'left' }}>
                         <th style={{ padding: '8px 10px' }}>ユーザー名</th>
                         <th style={{ padding: '8px 10px' }}>PIN</th>
                         <th style={{ padding: '8px 10px' }}>セッショントークン</th>
+                        <th style={{ padding: '8px 10px' }}>📱 ログイン端末 (OS/ブラウザ)</th>
                         <th style={{ padding: '8px 10px' }}>所持コイン</th>
                         <th style={{ padding: '8px 10px' }}>登録IPアドレス</th>
                         <th style={{ padding: '8px 10px', textAlign: 'center' }}>操作</th>
@@ -1138,6 +1140,10 @@ ${aiDigest}
                                   ⚪ 未接続
                                 </span>
                               )}
+                            </td>
+                            {/* 📱 User-Agent パース整形表示 */}
+                            <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#334155' }}>
+                              {parseUserAgent(u.user_agent)}
                             </td>
                             <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#16a34a' }}>
                               {(u.balance || 0).toLocaleString()} G

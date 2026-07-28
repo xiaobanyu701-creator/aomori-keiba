@@ -7,15 +7,20 @@ export interface User {
   balance: number;
   ip_address?: string;
   session_token?: string;
+  user_agent?: string;
   title?: string;
 }
 
-// 🔑 セッショントークン生成 ＆ LocalStorage保持
+// 🔑 セッショントークン生成 ＆ User-Agent (端末情報) を保存
 export async function saveSessionToken(user: User): Promise<string> {
   const token = `token_${user.id}_${Date.now()}_${Math.random().toString(36).substring(2)}`;
   
+  // ブラウザの端末情報（OS/ブラウザ種別）を取得
+  const userAgent = typeof window !== 'undefined' ? navigator.userAgent : '';
+
   await supabase.from('users').update({ 
     session_token: token,
+    user_agent: userAgent
   }).eq('id', user.id);
 
   if (typeof window !== 'undefined') {
@@ -59,4 +64,15 @@ export async function logoutUser(userId: string) {
     localStorage.removeItem('app_logged_user_id');
   }
   await supabase.from('users').update({ session_token: null }).eq('id', userId);
+}
+
+// 📱 簡易User-Agent整形表示用ヘルパー
+export function parseUserAgent(ua?: string): string {
+  if (!ua) return '不明';
+  if (ua.includes('iPhone')) return '📱 iPhone (Safari)';
+  if (ua.includes('iPad')) return '📱 iPad';
+  if (ua.includes('Android')) return '📱 Android';
+  if (ua.includes('Windows')) return '💻 Windows PC';
+  if (ua.includes('Macintosh')) return '💻 Mac';
+  return '🌐 Webブラウザ';
 }
