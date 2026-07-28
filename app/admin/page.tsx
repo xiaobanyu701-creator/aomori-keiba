@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
+import { sendDiscordNotification } from '@/lib/discord';
 
 export default function SuperAdminConsole() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -91,31 +92,6 @@ export default function SuperAdminConsole() {
 
   const [transferHorseName, setTransferHorseName] = useState('');
   const [transferTargetOwner, setTransferTargetOwner] = useState('');
-
-  const sendDiscordNotification = async (title: string, description: string, color: number = 0x1e3a8a) => {
-    const webhookUrl = process.env.NEXT_PUBLIC_DISCORD_WEBHOOK_URL;
-    if (!webhookUrl) return;
-
-    try {
-      await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          embeds: [
-            {
-              title: title,
-              description: description,
-              color: color,
-              footer: { text: '🍏 青森県競馬 公式実況システム' },
-              timestamp: new Date().toISOString(),
-            },
-          ],
-        }),
-      });
-    } catch (e) {
-      console.error('Discord通知送信失敗:', e);
-    }
-  };
 
   useEffect(() => { 
     if (isAuthenticated) { 
@@ -232,6 +208,24 @@ export default function SuperAdminConsole() {
         if (!breedEditOwnerName) setBreedEditOwnerName(reversed[0].discord_name);
       }
     }
+  };
+
+  // 🔑 1. リモート強制ログアウト（指定ユーザーのトークン削除）
+  const handleForceLogoutUser = async (userId: string, userName: string) => {
+    if (!confirm(`「${userName}」様を強制ログアウト（セッション切断）しますか？`)) return;
+
+    await supabase.from('users').update({ session_token: null }).eq('id', userId);
+    alert(`🔑 「${userName}」様のセッショントークンを破棄し、強制ログアウトさせました。`);
+    fetchUsers();
+  };
+
+  // 🧹 2. 全ユーザー一括セッションリセット（全ログアウト）
+  const handleResetAllTokens = async () => {
+    if (!confirm('⚠️ 本当に全プレイヤーのセッショントークンを一括削除して全強制ログアウトさせますか？')) return;
+
+    await supabase.from('users').update({ session_token: null }).neq('id', '00000000-0000-0000-0000-000000000000');
+    alert('🧹 全ユーザーのトークンを一括リセットしました！');
+    fetchUsers();
   };
   
   const fetchJockeys = async () => {
@@ -947,7 +941,7 @@ ${aiDigest}
 
         {/* ナビゲーションタブ */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px' }}>
-          <NavChip active={adminTab === 'users'} onClick={() => setAdminTab('users')} text="👥 プレイヤー・IP照合" />
+          <NavChip active={adminTab === 'users'} onClick={() => setAdminTab('users')} text="👥 プレイヤー・IP/トークン照合" />
           <NavChip active={adminTab === 'race'} onClick={() => setAdminTab('race')} text="⚡ 12R一括/時刻設定/返金" />
           <NavChip active={adminTab === 'horses'} onClick={() => setAdminTab('horses')} text="🗞️ 出走馬/AIオッズ/新聞" />
           <NavChip active={adminTab === 'anomaly_detect'} onClick={() => setAdminTab('anomaly_detect')} text={`⚠️ 異常検知 (${suspiciousBets.length})`} />
@@ -984,9 +978,25 @@ ${aiDigest}
 
         <div style={{ maxWidth: '950px', margin: '0 auto' }}>
 
-          {/* 👥 プレイヤー管理 */}
+          {/* 👥 プレイヤー管理 (トークン・IP・各種操作) */}
           {adminTab === 'users' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              {/* 🔑 セッショントークン管理コントロール */}
+              <div style={{ backgroundColor: '#eff6ff', border: '2px solid #2563eb', borderRadius: '16px', padding: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ margin: 0, color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
+                    🔑 セッショントークン ＆ ログイン状態リアルタイム管理
+                  </h3>
+                  <button onClick={handleResetAllTokens} style={{ padding: '8px 12px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+                    🧹 全プレイヤー一括ログアウト
+                  </button>
+                </div>
+                <p style={{ fontSize: '12px', color: '#475569', marginTop: '6px' }}>
+                  トークンが登録されているユーザーは自動ログインが有効になっています。「切断」を押すと該当端末の自動ログインが無効化されます。
+                </p>
+              </div>
+
               <div style={{ backgroundColor: '#fefce8', border: '2px solid #eab308', borderRadius: '16px', padding: '16px' }}>
                 <h3 style={{ margin: '0 0 8px 0', color: '#ca8a04', fontSize: '15px', fontWeight: 'bold' }}>
                   🎁 全プレイヤー一括コインプレゼント（イベント・お詫び用）
@@ -1071,10 +1081,10 @@ ${aiDigest}
                 )}
               </div>
 
-              {/* 🌐 IP照合 */}
+              {/* 🌐 IP ＆ トークン照合テーブル */}
               <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
-                  🌐 ユーザー登録IPアドレス管理（複アカ照合・重複検知）
+                  🌐 ユーザー登録IP ＆ トークン接続管理（複アカ照合・リモート切断）
                 </h3>
 
                 <div style={{ marginBottom: '12px' }}>
@@ -1088,11 +1098,12 @@ ${aiDigest}
                 </div>
 
                 <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '500px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '600px' }}>
                     <thead>
                       <tr style={{ backgroundColor: '#1e3a8a', color: '#fff', textAlign: 'left' }}>
                         <th style={{ padding: '8px 10px' }}>ユーザー名</th>
                         <th style={{ padding: '8px 10px' }}>PIN</th>
+                        <th style={{ padding: '8px 10px' }}>セッショントークン</th>
                         <th style={{ padding: '8px 10px' }}>所持コイン</th>
                         <th style={{ padding: '8px 10px' }}>登録IPアドレス</th>
                         <th style={{ padding: '8px 10px', textAlign: 'center' }}>操作</th>
@@ -1102,6 +1113,7 @@ ${aiDigest}
                       {filteredUsers.map((u) => {
                         const sameIpCount = users.filter((other) => other.ip_address && other.ip_address === u.ip_address).length;
                         const isMultiAccount = sameIpCount > 1;
+                        const hasToken = Boolean(u.session_token);
 
                         return (
                           <tr key={u.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: isMultiAccount ? '#fef2f2' : '#ffffff' }}>
@@ -1116,19 +1128,40 @@ ${aiDigest}
                             <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>
                               {u.pin_code || '未設定'}
                             </td>
+                            <td style={{ padding: '8px 10px' }}>
+                              {hasToken ? (
+                                <span style={{ backgroundColor: '#16a34a', color: '#fff', fontSize: '10px', padding: '3px 8px', borderRadius: '10px', fontWeight: 'bold' }}>
+                                  🟢 自動ログイン中
+                                </span>
+                              ) : (
+                                <span style={{ backgroundColor: '#64748b', color: '#fff', fontSize: '10px', padding: '3px 8px', borderRadius: '10px', fontWeight: 'bold' }}>
+                                  ⚪ 未接続
+                                </span>
+                              )}
+                            </td>
                             <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#16a34a' }}>
                               {(u.balance || 0).toLocaleString()} G
                             </td>
                             <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: u.ip_address ? '#1e40af' : '#94a3b8' }}>
-                              🌐 {u.ip_address || '未記録 (旧アカウント)'}
+                              🌐 {u.ip_address || '未記録'}
                             </td>
                             <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                              <button
-                                onClick={() => handleDeleteUser(u.id, u.discord_name)}
-                                style={{ backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '10px' }}
-                              >
-                                🗑️ 消去
-                              </button>
+                              <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                {hasToken && (
+                                  <button
+                                    onClick={() => handleForceLogoutUser(u.id, u.discord_name)}
+                                    style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '10px' }}
+                                  >
+                                    🔑 切断
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleDeleteUser(u.id, u.discord_name)}
+                                  style={{ backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '10px' }}
+                                >
+                                  🗑️ 消去
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
