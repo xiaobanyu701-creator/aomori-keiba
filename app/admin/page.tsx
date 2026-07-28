@@ -100,23 +100,27 @@ export default function SuperAdminConsole() {
   const [transferHorseName, setTransferHorseName] = useState('');
   const [transferTargetOwner, setTransferTargetOwner] = useState('');
 
-  // 🛡️ 初期読み込み：アクセスIP取得 ＆ ロック状態チェック
+  // 🛡️ 初期読み込み：管理者自動ログイン判定 ＆ IPチェック ＆ ロックチェック
   useEffect(() => {
     const initAdminSecurity = async () => {
+      let currentIp = '';
+      let isAllowed = true;
+
       // 1. IPの取得
       try {
         const res = await fetch('https://api.ipify.org?format=json');
         const data = await res.json();
-        const currentIp = data.ip || '';
+        currentIp = data.ip || '';
         setAdminIp(currentIp);
 
         // 2. 3人の許可IPリスト照合 (.env.local またはデフォルト)
         const allowedIpsEnv = process.env.NEXT_PUBLIC_ADMIN_ALLOWED_IPS || '';
         if (allowedIpsEnv.trim().length > 0) {
           const allowedList = allowedIpsEnv.split(',').map((ip) => ip.trim());
-          setIsIpAllowed(allowedList.includes(currentIp));
+          isAllowed = allowedList.includes(currentIp);
+          setIsIpAllowed(isAllowed);
         } else {
-          setIsIpAllowed(true); // 未設定時は全許可
+          setIsIpAllowed(true);
         }
       } catch (e) {
         console.error('IP確認失敗:', e);
@@ -136,6 +140,13 @@ export default function SuperAdminConsole() {
 
       const savedAttempts = Number(localStorage.getItem('admin_failed_attempts') || '0');
       setFailedAttempts(savedAttempts);
+
+      // 🔑 4. 【新機能】管理者暗証番号不要の自動ログイン判定！
+      // 「許可IP内」かつ「管理者認証キーがブラウザに保存済み」なら暗証番号入力なしで即パス！
+      const adminToken = localStorage.getItem('app_admin_session_token');
+      if (isAllowed && adminToken === 'allowed_admin_session_active') {
+        setIsAuthenticated(true);
+      }
     };
 
     initAdminSecurity();
@@ -936,17 +947,15 @@ ${aiDigest}
     fetchRaces(); fetchUsers(); fetchHorseMasters();
   };
 
-  // 🛡️ 認証ロジック：連続失敗ロック ＆ IPチェック ＆ 暗証番号照合
+  // 🛡️ 初回ログイン認証ロジック (成功時に管理用トークンを永続保存)
   const handleAdminLogin = (e: React.FormEvent) => { 
     e.preventDefault(); 
 
-    // ロック中チェック
     if (lockUntil && Date.now() < lockUntil) {
       const remainMin = Math.ceil((lockUntil - Date.now()) / 60000);
       return alert(`🚨 不正アクセス防止のためロック中です！あと約 ${remainMin} 分お待ちください。`);
     }
 
-    // IPアドレス拒否チェック
     if (!isIpAllowed) {
       sendDiscordNotification(
         '🚨 未許可IPからの管理者ログイン試行遮断！',
@@ -959,11 +968,12 @@ ${aiDigest}
     const expectedPin = process.env.NEXT_PUBLIC_ADMIN_PIN || '0302';
 
     if (pinInput === expectedPin) {
-      // 成功時：ミス回数を完全クリア
+      // 成功時：失敗カウントクリア ＆ ブラウザに「管理者自動ログイントークン」を記憶させる！
       setFailedAttempts(0);
       setLockUntil(null);
       localStorage.removeItem('admin_failed_attempts');
       localStorage.removeItem('admin_lock_until');
+      localStorage.setItem('app_admin_session_token', 'allowed_admin_session_active');
       setIsAuthenticated(true);
 
       sendDiscordNotification(
@@ -972,13 +982,12 @@ ${aiDigest}
         0x16a34a
       );
     } else {
-      // 失敗時：ミス回数加算
       const nextAttempts = failedAttempts + 1;
       setFailedAttempts(nextAttempts);
       localStorage.setItem('admin_failed_attempts', nextAttempts.toString());
 
       if (nextAttempts >= 3) {
-        const lockTime = Date.now() + 15 * 60 * 1000; // 15分間ロック
+        const lockTime = Date.now() + 15 * 60 * 1000;
         setLockUntil(lockTime);
         localStorage.setItem('admin_lock_until', lockTime.toString());
 
@@ -993,6 +1002,12 @@ ${aiDigest}
         alert(`❌ 暗証番号が違います！（ミス: ${nextAttempts}/3回）\n3回失敗すると15分間ロックされます。`);
       }
     }
+  };
+
+  // 🚪 管理者手動ログアウト（トークン消去）
+  const handleAdminLogout = () => {
+    localStorage.removeItem('app_admin_session_token');
+    setIsAuthenticated(false);
   };
 
   if (!isAuthenticated) return (
@@ -1015,7 +1030,7 @@ ${aiDigest}
         ) : (
           <form onSubmit={handleAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div>
-              <input type="password" value={pinInput} onChange={e=>setPinInput(e.target.value)} placeholder="暗証番号を入力" style={{ padding: '14px', fontSize: '18px', textAlign: 'center', borderRadius: '10px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', letterSpacing: '6px', width: '100%' }} />
+              <input type="password" value={pinInput} onChange={e=>setPinInput(e.target.value)} placeholder="初回のみ暗証番号を入力" style={{ padding: '14px', fontSize: '18px', textAlign: 'center', borderRadius: '10px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', letterSpacing: '6px', width: '100%' }} />
               {failedAttempts > 0 && (
                 <div style={{ color: '#dc2626', fontSize: '11px', fontWeight: 'bold', marginTop: '4px' }}>
                   ⚠️ 入力ミス: {failedAttempts} / 3 回
@@ -1023,7 +1038,7 @@ ${aiDigest}
               )}
             </div>
             <button type="submit" style={{ padding: '14px', backgroundColor: '#1e3a8a', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '10px', cursor: 'pointer' }}>
-              安全ログイン 🔑
+              管理者認証（次回から自動ログイン）🔑
             </button>
           </form>
         )}
@@ -1057,7 +1072,10 @@ ${aiDigest}
             <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '900' }}>🍏 青森県競馬 コントロールセンター</h2>
             {isMaintenanceMode && <span style={{ backgroundColor: '#ef4444', color: '#fff', fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '10px' }}>🛑 メンテ中</span>}
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button onClick={handleAdminLogout} style={{ padding: '4px 10px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+              ログアウト
+            </button>
             <Link href="/owner" style={{ padding: '4px 10px', backgroundColor: '#16a34a', color: '#fff', borderRadius: '6px', textDecoration: 'none', fontSize: '11px', fontWeight: 'bold' }}>馬主 ↗</Link>
             <Link href="/" style={{ padding: '4px 10px', backgroundColor: '#2563eb', color: '#fff', borderRadius: '6px', textDecoration: 'none', fontSize: '11px', fontWeight: 'bold' }}>IPAT ↗</Link>
           </div>
