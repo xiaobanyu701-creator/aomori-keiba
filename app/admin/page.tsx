@@ -10,6 +10,12 @@ export default function SuperAdminConsole() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
 
+  // 🛡️ 連続ミス・ロック・IP制限ステート
+  const [failedAttempts, setFailedAttempts] = useState<number>(0);
+  const [lockUntil, setLockUntil] = useState<number | null>(null);
+  const [adminIp, setAdminIp] = useState<string>('');
+  const [isIpAllowed, setIsIpAllowed] = useState<boolean>(true);
+
   const [adminTab, setAdminTab] = useState<
     'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 
     'owner_assign' | 'users' | 'breed_edit' | 'news_edit' | 'pedigree_admin' | 
@@ -93,6 +99,47 @@ export default function SuperAdminConsole() {
 
   const [transferHorseName, setTransferHorseName] = useState('');
   const [transferTargetOwner, setTransferTargetOwner] = useState('');
+
+  // 🛡️ 初期読み込み：アクセスIP取得 ＆ ロック状態チェック
+  useEffect(() => {
+    const initAdminSecurity = async () => {
+      // 1. IPの取得
+      try {
+        const res = await fetch('https://api.ipify.org?format=json');
+        const data = await res.json();
+        const currentIp = data.ip || '';
+        setAdminIp(currentIp);
+
+        // 2. 3人の許可IPリスト照合 (.env.local またはデフォルト)
+        const allowedIpsEnv = process.env.NEXT_PUBLIC_ADMIN_ALLOWED_IPS || '';
+        if (allowedIpsEnv.trim().length > 0) {
+          const allowedList = allowedIpsEnv.split(',').map((ip) => ip.trim());
+          setIsIpAllowed(allowedList.includes(currentIp));
+        } else {
+          setIsIpAllowed(true); // 未設定時は全許可
+        }
+      } catch (e) {
+        console.error('IP確認失敗:', e);
+      }
+
+      // 3. ローカルのロック時間確認
+      const savedLock = localStorage.getItem('admin_lock_until');
+      if (savedLock) {
+        const lockTime = Number(savedLock);
+        if (Date.now() < lockTime) {
+          setLockUntil(lockTime);
+        } else {
+          localStorage.removeItem('admin_lock_until');
+          localStorage.removeItem('admin_failed_attempts');
+        }
+      }
+
+      const savedAttempts = Number(localStorage.getItem('admin_failed_attempts') || '0');
+      setFailedAttempts(savedAttempts);
+    };
+
+    initAdminSecurity();
+  }, []);
 
   useEffect(() => { 
     if (isAuthenticated) { 
@@ -211,7 +258,6 @@ export default function SuperAdminConsole() {
     }
   };
 
-  // 🔑 1. リモート強制ログアウト（指定ユーザーのトークン削除）
   const handleForceLogoutUser = async (userId: string, userName: string) => {
     if (!confirm(`「${userName}」様を強制ログアウト（セッション切断）しますか？`)) return;
 
@@ -220,7 +266,6 @@ export default function SuperAdminConsole() {
     fetchUsers();
   };
 
-  // 🧹 2. 全ユーザー一括セッションリセット（全ログアウト）
   const handleResetAllTokens = async () => {
     if (!confirm('⚠️ 本当に全プレイヤーのセッショントークンを一括削除して全強制ログアウトさせますか？')) return;
 
@@ -891,20 +936,98 @@ ${aiDigest}
     fetchRaces(); fetchUsers(); fetchHorseMasters();
   };
 
+  // 🛡️ 認証ロジック：連続失敗ロック ＆ IPチェック ＆ 暗証番号照合
   const handleAdminLogin = (e: React.FormEvent) => { 
     e.preventDefault(); 
-    if (pinInput === '0302') setIsAuthenticated(true); 
-    else alert('暗証番号が違います'); 
+
+    // ロック中チェック
+    if (lockUntil && Date.now() < lockUntil) {
+      const remainMin = Math.ceil((lockUntil - Date.now()) / 60000);
+      return alert(`🚨 不正アクセス防止のためロック中です！あと約 ${remainMin} 分お待ちください。`);
+    }
+
+    // IPアドレス拒否チェック
+    if (!isIpAllowed) {
+      sendDiscordNotification(
+        '🚨 未許可IPからの管理者ログイン試行遮断！',
+        `管理者未登録のIPアドレス (**${adminIp}**) からアクセス試行がありました！`,
+        0xef4444
+      );
+      return alert(`❌ アクセス拒否: あなたのIPアドレス (${adminIp}) は許可された管理者IPリストに登録されていません。`);
+    }
+
+    const expectedPin = process.env.NEXT_PUBLIC_ADMIN_PIN || '0302';
+
+    if (pinInput === expectedPin) {
+      // 成功時：ミス回数を完全クリア
+      setFailedAttempts(0);
+      setLockUntil(null);
+      localStorage.removeItem('admin_failed_attempts');
+      localStorage.removeItem('admin_lock_until');
+      setIsAuthenticated(true);
+
+      sendDiscordNotification(
+        '🟢 管理者ログイン成功',
+        `管理者画面へ正しくログインされました。（IP: ${adminIp}）`,
+        0x16a34a
+      );
+    } else {
+      // 失敗時：ミス回数加算
+      const nextAttempts = failedAttempts + 1;
+      setFailedAttempts(nextAttempts);
+      localStorage.setItem('admin_failed_attempts', nextAttempts.toString());
+
+      if (nextAttempts >= 3) {
+        const lockTime = Date.now() + 15 * 60 * 1000; // 15分間ロック
+        setLockUntil(lockTime);
+        localStorage.setItem('admin_lock_until', lockTime.toString());
+
+        sendDiscordNotification(
+          '🚨 【警告】 管理者ログイン 3回連続失敗！自動ロック起動',
+          `暗証番号が3回連続で間違えられたため、15分間の自動ロックを起動しました！\n試行IP: **${adminIp}**`,
+          0xef4444
+        );
+
+        alert('🚨 暗証番号を3回間違えました！不正防止のため管理者画面を15分間ロックします。');
+      } else {
+        alert(`❌ 暗証番号が違います！（ミス: ${nextAttempts}/3回）\n3回失敗すると15分間ロックされます。`);
+      }
+    }
   };
 
   if (!isAuthenticated) return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f1f5f9' }}>
       <div style={{ backgroundColor: '#ffffff', padding: '40px 20px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05)', textAlign: 'center', maxWidth: '380px', width: '100%' }}>
-        <h2 style={{ color: '#1e3a8a', margin: '0 0 20px 0', fontSize: '20px', fontWeight: 'bold' }}>🍏 運営管理者ログイン</h2>
-        <form onSubmit={handleAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <input type="password" value={pinInput} onChange={e=>setPinInput(e.target.value)} placeholder="暗証番号を入力" style={{ padding: '14px', fontSize: '18px', textAlign: 'center', borderRadius: '10px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', letterSpacing: '6px' }} />
-          <button type="submit" style={{ padding: '14px', backgroundColor: '#1e3a8a', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '10px', cursor: 'pointer' }}>ログイン</button>
-        </form>
+        <h2 style={{ color: '#1e3a8a', margin: '0 0 10px 0', fontSize: '20px', fontWeight: 'bold' }}>🍏 運営管理者ログイン</h2>
+        
+        {/* 🌐 接続IPアドレス表示 */}
+        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '16px' }}>
+          接続元IP: <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: isIpAllowed ? '#16a34a' : '#ef4444' }}>{adminIp || '取得中...'}</span>
+          {!isIpAllowed && <div style={{ color: '#ef4444', fontWeight: 'bold', marginTop: '2px' }}>⚠️ 未許可IP（アクセス不可）</div>}
+        </div>
+
+        {/* 🚨 15分ロックバナー */}
+        {lockUntil && Date.now() < lockUntil ? (
+          <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fca5a5', padding: '16px', borderRadius: '10px', color: '#dc2626', fontWeight: 'bold', fontSize: '13px', lineHeight: '1.5' }}>
+            🚨 暗証番号ミス過多により一時ロック中<br />
+            残タイム: 約 {Math.ceil((lockUntil - Date.now()) / 60000)} 分
+          </div>
+        ) : (
+          <form onSubmit={handleAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <input type="password" value={pinInput} onChange={e=>setPinInput(e.target.value)} placeholder="暗証番号を入力" style={{ padding: '14px', fontSize: '18px', textAlign: 'center', borderRadius: '10px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', letterSpacing: '6px', width: '100%' }} />
+              {failedAttempts > 0 && (
+                <div style={{ color: '#dc2626', fontSize: '11px', fontWeight: 'bold', marginTop: '4px' }}>
+                  ⚠️ 入力ミス: {failedAttempts} / 3 回
+                </div>
+              )}
+            </div>
+            <button type="submit" style={{ padding: '14px', backgroundColor: '#1e3a8a', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '10px', cursor: 'pointer' }}>
+              安全ログイン 🔑
+            </button>
+          </form>
+        )}
+
         <div style={{ marginTop: '16px' }}><Link href="/" style={{ color: '#2563eb', fontSize: '13px', textDecoration: 'none', fontWeight: 'bold' }}>← ユーザー画面に戻る</Link></div>
       </div>
     </div>
@@ -1082,7 +1205,7 @@ ${aiDigest}
                 )}
               </div>
 
-              {/* 🌐 IP ＆ トークン ＆ 端末（User-Agent）照合テーブル */}
+              {/* 🌐 IP ＆ トークン ＆ 端末照合テーブル */}
               <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ margin: '0 0 10px 0', color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
                   🌐 ユーザー登録IP ＆ 端末管理（複アカ照合・端末特定・リモート切断）
@@ -1141,7 +1264,6 @@ ${aiDigest}
                                 </span>
                               )}
                             </td>
-                            {/* 📱 User-Agent パース整形表示 */}
                             <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#334155' }}>
                               {parseUserAgent(u.user_agent)}
                             </td>
