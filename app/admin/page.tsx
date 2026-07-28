@@ -53,6 +53,7 @@ export default function SuperAdminConsole() {
 
   const [bulkGiftAmount, setBulkImportGiftAmount] = useState<number>(1000000);
   const [ipSearchQuery, setIpSearchQuery] = useState<string>('');
+  const [horseSearchQuery, setHorseSearchQuery] = useState<string>(''); // 🔍 現役競走馬検索用ステート
 
   const [breedEditOwnerName, setBreedEditOwnerName] = useState<string>('');
   const [userBredHorses, setUserBredHorses] = useState<any[]>([]);
@@ -1108,7 +1109,16 @@ ${aiDigest}
     </div>
   );
 
-  const activeHorseMasters = horseMasterList.filter(h => h.status !== '引退' && h.status !== '種牡馬/繁殖牝馬');
+  // 🔍 現役競走馬リアルタイム検索フィルタリング
+  const activeHorseMasters = horseMasterList
+    .filter(h => h.status !== '引退' && h.status !== '種牡馬/繁殖牝馬')
+    .filter(h => 
+      horseSearchQuery
+        ? (h.name || '').toLowerCase().includes(horseSearchQuery.toLowerCase()) ||
+          (h.owner_name || '').toLowerCase().includes(horseSearchQuery.toLowerCase()) ||
+          (h.status || '').toLowerCase().includes(horseSearchQuery.toLowerCase())
+        : true
+    );
 
   const filteredUsers = users.filter((u) =>
     ipSearchQuery
@@ -1809,8 +1819,20 @@ ${aiDigest}
 
               <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ marginTop: 0, color: '#1e3a8a', fontWeight: 'bold', fontSize: '16px' }}>📋 現役競走馬マスター ({activeHorseMasters.length}頭) ＆ 💉 故障治療操作</h3>
+                
+                {/* 🔍 現役競走馬リアルタイム検索バー */}
+                <div style={{ marginTop: '12px', marginBottom: '8px' }}>
+                  <input
+                    type="text"
+                    placeholder="🔍 現役馬名・馬主名・ステータスで検索..."
+                    value={horseSearchQuery}
+                    onChange={(e) => setHorseSearchQuery(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '12px', fontSize: '12px', minWidth: '500px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '4px', fontSize: '12px', minWidth: '500px' }}>
                     <thead>
                       <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}>
                         <th style={{ padding: '8px' }}>馬名</th><th>馬主</th><th>状態</th><th>ケガ/治療操作</th><th>操作</th><th>削除</th>
