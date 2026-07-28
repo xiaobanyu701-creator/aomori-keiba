@@ -1152,6 +1152,24 @@ ${aiDigest}
         </div>
 
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px' }}>
+          {/* 👇 騎手マスター管理画面へ直接アクセスできるリンクボタンを追加！ */}
+          <Link
+            href="/admin/jockeys"
+            style={{
+              padding: '6px 12px',
+              borderRadius: '20px',
+              backgroundColor: '#059669',
+              color: '#ffffff',
+              textDecoration: 'none',
+              fontWeight: 'bold',
+              fontSize: '11px',
+              whiteSpace: 'nowrap',
+              display: 'inline-flex',
+              alignItems: 'center',
+            }}
+          >
+            🏇 騎手マスター管理 ↗
+          </Link>
           <NavChip active={adminTab === 'users'} onClick={() => setAdminTab('users')} text="👥 プレイヤー・IP/端末照合" />
           <NavChip active={adminTab === 'admin_logs'} onClick={() => setAdminTab('admin_logs')} text={`📝 操作履歴 (${adminLogs.length})`} />
           <NavChip active={adminTab === 'race'} onClick={() => setAdminTab('race')} text="⚡ 12R一括/時刻設定/返金" />
