@@ -544,6 +544,9 @@ export default function IPATPage() {
           )}
 
           <div style={{ display: 'flex', gap: '6px' }}>
+            <Link href="/jockeys" style={{ backgroundColor: '#059669', color: '#fff', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold', fontSize: '12px' }}>
+              🏇 騎手
+            </Link>
             <Link href="/owner" style={{ backgroundColor: '#16a34a', color: '#fff', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold', fontSize: '12px' }}>
               🐴 馬主
             </Link>
