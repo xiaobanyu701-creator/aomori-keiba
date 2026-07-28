@@ -1,8 +1,17 @@
-// 🔔 スマホの通知許可をリクエストする関数
+// 🔔 Service Workerの登録 ＆ 通知許可リクエスト
 export async function requestNotificationPermission(): Promise<boolean> {
   if (typeof window === 'undefined' || !('Notification' in window)) {
-    console.log('このブラウザは通知に対応していません');
     return false;
+  }
+
+  // Service Worker の登録
+  if ('serviceWorker' in navigator) {
+    try {
+      await navigator.serviceWorker.register('/sw.js');
+      console.log('Service Worker 登録成功');
+    } catch (err) {
+      console.error('Service Worker 登録失敗:', err);
+    }
   }
 
   if (Notification.permission === 'granted') {
@@ -17,17 +26,23 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return false;
 }
 
-// 📱 スマホの画面上部にプッシュ通知を飛ばす関数
-export function sendLocalPushNotification(title: string, body: string) {
+// 📱 スマホプッシュ通知を確実に発信（Service Worker 経由）
+export async function sendLocalPushNotification(title: string, body: string) {
   if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
     try {
-      new Notification(title, {
-        body: body,
-        icon: '/favicon.ico', // アイコン画像（あれば）
-        badge: '/favicon.ico',
-      });
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        registration.showNotification(title, {
+          body: body,
+          icon: '/favicon.ico',
+          badge: '/favicon.ico',
+          vibrate: [200, 100, 200],
+        } as any);
+      } else {
+        new Notification(title, { body });
+      }
     } catch (e) {
-      console.error('スマホ通知送信失敗:', e);
+      console.error('スマホ通知送信エラー:', e);
     }
   }
 }

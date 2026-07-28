@@ -1,17 +1,15 @@
 {
-  "name": "青森県競馬 IPAT",
-  "short_name": "青森県競馬",
-  "description": "青森県競馬の即パット投票・馬主管理システム",
+  "name": "青森県競馬 即パット",
+  "short_name": "即パット",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1e3a8a",
   "theme_color": "#1e3a8a",
   "icons": [
     {
-      "src": "/icon",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
     }
   ]
 }
