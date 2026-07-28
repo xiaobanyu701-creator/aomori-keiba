@@ -65,18 +65,28 @@ export default function IPATPage() {
     setLiveStreamUrl(stream);
     const maint = localStorage.getItem('app_maintenance_mode') === 'true';
     setIsMaintenance(maint);
-  }, []);
 
-  // 🕒 10秒ごとに最新レース状態・オッズ・締め切り時刻を自動更新チェック
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchRaces();
-      if (currentRace?.id) {
-        fetchHorsesAndOnlineOdds(currentRace.id);
-      }
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [currentRace]);
+    // ⚡ ⚡ ⚡ Supabase Realtime (リアルタイム自動更新チャネルの接続) ⚡ ⚡ ⚡
+    const realtimeChannel = supabase
+      .channel('public_realtime_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'races' }, () => {
+        fetchRaces();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'horses' }, () => {
+        if (currentRace?.id) fetchHorsesAndOnlineOdds(currentRace.id);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inquiries' }, () => {
+        fetchChat();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bets' }, () => {
+        if (currentRace?.id) fetchHorsesAndOnlineOdds(currentRace.id);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(realtimeChannel);
+    };
+  }, []);
 
   useEffect(() => {
     if (races.length > 0) {
@@ -277,7 +287,7 @@ export default function IPATPage() {
           await supabase.from('users').update({ ip_address: userIp }).eq('id', exUser.id);
           exUser.ip_address = userIp;
         }
-        // 🔑 トークンを発行して保存（自動ログイン有効化）
+        // 🔑 トークンを発行して保存
         await saveSessionToken(exUser);
         setCurrentUser(exUser);
       } else {
@@ -311,7 +321,6 @@ export default function IPATPage() {
         }
 
         if (inserted && inserted.length > 0) {
-          // 🔑 トークンを発行して保存
           await saveSessionToken(inserted[0]);
           setCurrentUser(inserted[0]);
           alert('🎉 登録完了！ 10,000,000 G 付与！');
@@ -337,7 +346,7 @@ export default function IPATPage() {
     }
   };
 
-  // 🎫 馬券購入処理（ボックス・マルチ対応）
+  // 🎫 馬券購入処理
   const handleBuyBet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return alert('ログインしてください');
@@ -619,7 +628,7 @@ export default function IPATPage() {
                   </div>
                 </div>
 
-                {/* レース情報カード (発走予定時刻・状態表示機能付き) */}
+                {/* レース情報カード */}
                 {currentRace && (
                   <div style={{ backgroundColor: isFinished ? '#f0fdf4' : '#eff6ff', padding: '14px', borderRadius: '12px', marginBottom: '20px', border: `1px solid ${isFinished ? '#86efac' : '#bfdbfe'}`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -649,7 +658,6 @@ export default function IPATPage() {
                       {currentRace.distance_m || 1800}m / {currentRace.track_condition || '良'} / 天候: {currentRace.weather || '晴'} / 1着賞金: {(currentRace.prize || 1000000).toLocaleString()} G
                     </div>
 
-                    {/* 🕒 発走予定時間の自動表示 */}
                     {!isFinished && (
                       <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: 'bold', backgroundColor: '#fef2f2', padding: '6px 10px', borderRadius: '6px', border: '1px solid #fca5a5' }}>
                         🕒 発走予定時刻: {currentRace.start_time || '15:30'} （時刻になると自動締切）
@@ -673,7 +681,6 @@ export default function IPATPage() {
                         </select>
                       </div>
 
-                      {/* ボックス買い用の複数チェックボックス表示 */}
                       {betType.includes('ボックス') ? (
                         <div>
                           <label style={labelStyle}>② ボックス対象馬を2頭以上選択</label>
@@ -1072,7 +1079,6 @@ export default function IPATPage() {
               🐎 {detailModalHorse.name} （能力詳細）
             </h3>
 
-            {/* 🗣️ AIトラックマン自動解説パネル */}
             <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', padding: '12px', borderRadius: '10px', marginBottom: '14px', fontSize: '12px', color: '#1e3a8a', lineHeight: '1.5', fontWeight: 'bold' }}>
               {getAiTrackmanComment(Number(detailModalHorse.calculatedOdds || detailModalHorse.manual_odds || 5.0))}
             </div>

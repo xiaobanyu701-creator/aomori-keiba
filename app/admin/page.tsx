@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { sendDiscordNotification } from '@/lib/discord';
 import { parseUserAgent } from '@/lib/auth';
+import { logAdminAction } from '@/lib/adminLogger';
 
 export default function SuperAdminConsole() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -16,12 +17,15 @@ export default function SuperAdminConsole() {
   const [adminIp, setAdminIp] = useState<string>('');
   const [isIpAllowed, setIsIpAllowed] = useState<boolean>(true);
 
+  // 📝 操作ログステート
+  const [adminLogs, setAdminLogs] = useState<any[]>([]);
+
   const [adminTab, setAdminTab] = useState<
     'horses' | 'race' | 'odds' | 'settle' | 'jockeys' | 'horse_masters' | 
     'owner_assign' | 'users' | 'breed_edit' | 'news_edit' | 'pedigree_admin' | 
     'chat_admin' | 'auction_admin' | 'bulk_import' | 'pool_monitor' | 
     'race_requests_admin' | 'live_stream' | 'mvp_reward' | 'maintenance' | 
-    'anomaly_detect' | 'analytics'
+    'anomaly_detect' | 'analytics' | 'admin_logs'
   >('users');
 
   const [races, setRaces] = useState<any[]>([]);
@@ -100,20 +104,18 @@ export default function SuperAdminConsole() {
   const [transferHorseName, setTransferHorseName] = useState('');
   const [transferTargetOwner, setTransferTargetOwner] = useState('');
 
-  // 🛡️ 初期読み込み：管理者自動ログイン判定 ＆ IPチェック ＆ ロックチェック
+  // 🛡️ 初期読み込み
   useEffect(() => {
     const initAdminSecurity = async () => {
       let currentIp = '';
       let isAllowed = true;
 
-      // 1. IPの取得
       try {
         const res = await fetch('https://api.ipify.org?format=json');
         const data = await res.json();
         currentIp = data.ip || '';
         setAdminIp(currentIp);
 
-        // 2. 3人の許可IPリスト照合 (.env.local またはデフォルト)
         const allowedIpsEnv = process.env.NEXT_PUBLIC_ADMIN_ALLOWED_IPS || '';
         if (allowedIpsEnv.trim().length > 0) {
           const allowedList = allowedIpsEnv.split(',').map((ip) => ip.trim());
@@ -126,7 +128,6 @@ export default function SuperAdminConsole() {
         console.error('IP確認失敗:', e);
       }
 
-      // 3. ローカルのロック時間確認
       const savedLock = localStorage.getItem('admin_lock_until');
       if (savedLock) {
         const lockTime = Number(savedLock);
@@ -141,8 +142,6 @@ export default function SuperAdminConsole() {
       const savedAttempts = Number(localStorage.getItem('admin_failed_attempts') || '0');
       setFailedAttempts(savedAttempts);
 
-      // 🔑 4. 【新機能】管理者暗証番号不要の自動ログイン判定！
-      // 「許可IP内」かつ「管理者認証キーがブラウザに保存済み」なら暗証番号入力なしで即パス！
       const adminToken = localStorage.getItem('app_admin_session_token');
       if (isAllowed && adminToken === 'allowed_admin_session_active') {
         setIsAuthenticated(true);
@@ -154,7 +153,7 @@ export default function SuperAdminConsole() {
 
   useEffect(() => { 
     if (isAuthenticated) { 
-      fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters(); fetchNews(); fetchChat(); fetchAllBets(); fetchRaceRequests(); fetchAuctions();
+      fetchRaces(); fetchUsers(); fetchJockeys(); fetchHorseMasters(); fetchNews(); fetchChat(); fetchAllBets(); fetchRaceRequests(); fetchAuctions(); fetchAdminLogs();
       const cfg = Number(localStorage.getItem('daily_bonus_amount') || 100000);
       setDailyBonusConfig(cfg);
       const sRate = Number(localStorage.getItem('training_success_rate') || 70);
@@ -168,6 +167,13 @@ export default function SuperAdminConsole() {
       setIsMaintenanceMode(maint);
     } 
   }, [isAuthenticated]);
+
+  const fetchAdminLogs = async () => {
+    try {
+      const { data } = await supabase.from('admin_logs').select('*').order('created_at', { ascending: false }).limit(50);
+      if (data) setAdminLogs(data);
+    } catch (e) {}
+  };
 
   useEffect(() => {
     if (!isAuthenticated || races.length === 0) return;
@@ -184,6 +190,7 @@ export default function SuperAdminConsole() {
             `発走予定時刻（${r.start_time}）に達したため、【${r.race_number}R ${r.title || ''}】の投票受付を自動締め切りました！`,
             0xdc2626
           );
+          logAdminAction('自動締切', `【${r.race_number}R】発走時刻に達したため自動締め切り`, 'SYSTEM');
           fetchRaces();
         }
       });
@@ -273,16 +280,18 @@ export default function SuperAdminConsole() {
     if (!confirm(`「${userName}」様を強制ログアウト（セッション切断）しますか？`)) return;
 
     await supabase.from('users').update({ session_token: null }).eq('id', userId);
+    logAdminAction('強制ログアウト', `ユーザー「${userName}」をリモート切断`, adminIp);
     alert(`🔑 「${userName}」様のセッショントークンを破棄し、強制ログアウトさせました。`);
-    fetchUsers();
+    fetchUsers(); fetchAdminLogs();
   };
 
   const handleResetAllTokens = async () => {
     if (!confirm('⚠️ 本当に全プレイヤーのセッショントークンを一括削除して全強制ログアウトさせますか？')) return;
 
     await supabase.from('users').update({ session_token: null }).neq('id', '00000000-0000-0000-0000-000000000000');
+    logAdminAction('全一括ログアウト', '全ユーザーのセッショントークンを一括削除', adminIp);
     alert('🧹 全ユーザーのトークンを一括リセットしました！');
-    fetchUsers();
+    fetchUsers(); fetchAdminLogs();
   };
   
   const fetchJockeys = async () => {
@@ -337,6 +346,7 @@ export default function SuperAdminConsole() {
 
   const handleSaveLiveStreamUrl = () => {
     localStorage.setItem('app_live_stream_url', liveStreamUrl);
+    logAdminAction('生配信URL変更', `配信URLを変更: ${liveStreamUrl}`, adminIp);
     alert('🎥 生配信プレイヤーURLを更新しました！ユーザー画面に反映されます。');
   };
 
@@ -345,6 +355,8 @@ export default function SuperAdminConsole() {
     setIsMaintenanceMode(nextState);
     localStorage.setItem('app_maintenance_mode', nextState.toString());
     
+    logAdminAction('メンテナンス切替', `メンテナンスモードを【${nextState ? 'ON' : 'OFF'}】へ変更`, adminIp);
+
     sendDiscordNotification(
       nextState ? '🛑 緊急メンテナンス開始' : '🟢 メンテナンス終了',
       nextState ? '現在システム更新のためメンテナンスモードに移行しました。' : 'メンテナンスが完了し、正常にサービスを再開いたしました！',
@@ -360,6 +372,7 @@ export default function SuperAdminConsole() {
     const newBal = (selectedUser.balance || 0) + bonus;
 
     await supabase.from('users').update({ balance: newBal, title: '👑 今節最優秀馬主' }).eq('id', selectedUser.id);
+    logAdminAction('MVP表彰', `「${selectedUser.discord_name}」をMVP表彰（500万G付与）`, adminIp);
 
     sendDiscordNotification(
       '🏆 今節のMVP（最優秀馬主）表彰！',
@@ -368,7 +381,7 @@ export default function SuperAdminConsole() {
     );
 
     alert(`🏆 「${selectedUser.discord_name}」様を今節MVPとして表彰し、500万Gを贈呈しました！`);
-    fetchUsers();
+    fetchUsers(); fetchAdminLogs();
   };
 
   const handleTransferHorseOwnership = async () => {
@@ -376,6 +389,7 @@ export default function SuperAdminConsole() {
     if (!confirm(`「${transferHorseName}」の所有権を「${transferTargetOwner}」様へ直接譲渡しますか？`)) return;
 
     await supabase.from('horse_masters').update({ owner_name: transferTargetOwner, status: '現役' }).eq('name', transferHorseName);
+    logAdminAction('馬所有権譲渡', `「${transferHorseName}」を「${transferTargetOwner}」へ譲渡`, adminIp);
 
     sendDiscordNotification(
       '🏷️ 愛馬の所有権譲渡成立',
@@ -384,14 +398,15 @@ export default function SuperAdminConsole() {
     );
 
     alert(`✅ 「${transferHorseName}」を「${transferTargetOwner}」様へ譲渡しました！`);
-    setTransferHorseName(''); setTransferTargetOwner(''); fetchHorseMasters();
+    setTransferHorseName(''); setTransferTargetOwner(''); fetchHorseMasters(); fetchAdminLogs();
   };
 
   const handleInjuryOrHealHorse = async (horseId: string, horseName: string, action: 'injure' | 'heal') => {
     const nextStatus = action === 'injure' ? '故障休養中(屈腱炎)' : '現役';
     await supabase.from('horse_masters').update({ status: nextStatus }).eq('id', horseId);
+    logAdminAction('故障/完治操作', `「${horseName}」のステータスを【${nextStatus}】へ変更`, adminIp);
     alert(`💉 「${horseName}」のステータスを【 ${nextStatus} 】へ変更しました。`);
-    fetchHorseMasters();
+    fetchHorseMasters(); fetchAdminLogs();
   };
 
   const handleResetPinCode = async () => {
@@ -399,6 +414,7 @@ export default function SuperAdminConsole() {
     if (!confirm(`「${selectedUser.discord_name}」様の暗証番号（PIN）を【 0000 】に初期化しますか？`)) return;
 
     await supabase.from('users').update({ pin_code: '0000' }).eq('id', selectedUser.id);
+    logAdminAction('PIN初期化', `「${selectedUser.discord_name}」のPINを0000に初期化`, adminIp);
 
     sendDiscordNotification(
       '🛡️ 管理者セキュリティログ',
@@ -407,7 +423,7 @@ export default function SuperAdminConsole() {
     );
 
     alert(`🔑 「${selectedUser.discord_name}」様の暗証番号を【 0000 】にリセットしました！`);
-    setCustomPinInput('0000'); fetchUsers();
+    setCustomPinInput('0000'); fetchUsers(); fetchAdminLogs();
   };
 
   const handleDistributeBulkCoins = async () => {
@@ -419,6 +435,8 @@ export default function SuperAdminConsole() {
       await supabase.from('users').update({ balance: newBal }).eq('id', u.id);
     }
 
+    logAdminAction('全ユーザー一括配布', `全員へ${bulkGiftAmount.toLocaleString()} Gを一括配布`, adminIp);
+
     sendDiscordNotification(
       '🎁 運営特別一括ボーナス配布！',
       `全プレイヤーへ **【 ${bulkGiftAmount.toLocaleString()} G 】** がプレゼントされました！所持金をご確認ください！`,
@@ -426,7 +444,7 @@ export default function SuperAdminConsole() {
     );
 
     alert(`🎉 全プレイヤーへ ${bulkGiftAmount.toLocaleString()} G を一括配布しました！`);
-    fetchUsers();
+    fetchUsers(); fetchAdminLogs();
   };
 
   const handleRefundRaceBets = async () => {
@@ -450,6 +468,8 @@ export default function SuperAdminConsole() {
 
     await supabase.from('races').update({ status: 'open' }).eq('id', currentRace.id);
 
+    logAdminAction('レース全額返金', `【${selectedRaceNo}R】の全賭け金を返金リセット`, adminIp);
+
     sendDiscordNotification(
       `💸 【${selectedRaceNo}R】全額返還（返金）のお知らせ`,
       `【${selectedRaceNo}R】は出走除外/中止のため、投票されたすべての馬券代金がプレイヤー口座へ全額自動返還されました。`,
@@ -457,7 +477,7 @@ export default function SuperAdminConsole() {
     );
 
     alert(`💸 【${selectedRaceNo}R】の賭け金を全額返金し、投票データをリセットしました！`);
-    fetchRaces(); fetchUsers(); fetchAllBets();
+    fetchRaces(); fetchUsers(); fetchAllBets(); fetchAdminLogs();
   };
 
   const handleUnsettleRace = async () => {
@@ -484,8 +504,10 @@ export default function SuperAdminConsole() {
       first_horse: null, second_horse: null, third_horse: null
     }).eq('id', currentRace.id);
 
+    logAdminAction('確定取消', `【${selectedRaceNo}R】の確定を取り消し未確定に戻す`, adminIp);
+
     alert(`🔄 【${selectedRaceNo}R】の着順確定を取り消し、配当金を回収しました！`);
-    fetchRaces(); fetchUsers(); fetchAllBets();
+    fetchRaces(); fetchUsers(); fetchAllBets(); fetchAdminLogs();
   };
 
   const handleForceCancelAuction = async (auctionId: string, horseName: string) => {
@@ -493,9 +515,10 @@ export default function SuperAdminConsole() {
 
     await supabase.from('auctions').delete().eq('id', auctionId);
     await supabase.from('horse_masters').update({ status: '現役' }).eq('name', horseName);
+    logAdminAction('セリ強制削除', `「${horseName}」のセリ出品を強制取り消し`, adminIp);
 
     alert(`🔨 「${horseName}」のセリ出品を取り消しました。`);
-    fetchAuctions(); fetchHorseMasters();
+    fetchAuctions(); fetchHorseMasters(); fetchAdminLogs();
   };
 
   const handleAddAiRivalHorse = async () => {
@@ -575,6 +598,8 @@ export default function SuperAdminConsole() {
     await supabase.from('horse_masters').update({ status: `出走(${req.target_race_no}R)` }).eq('name', req.horse_name);
     await supabase.from('race_requests').update({ status: 'approved' }).eq('id', req.id);
 
+    logAdminAction('出走申請承認', `【${req.target_race_no}R】に「${req.horse_name}」を出走登録`, adminIp);
+
     sendDiscordNotification(
       '🐎 出走確定アナウンス',
       `**${req.owner_name}** 様の愛馬 **【${req.horse_name}】** が【${req.target_race_no}R】 ${nextHorseNo}番 (騎手: ${req.preferred_jockey}) に登録されました！`,
@@ -582,7 +607,7 @@ export default function SuperAdminConsole() {
     );
 
     alert(`🟢 「${req.horse_name}」を 【${req.target_race_no}R ${nextHorseNo}番 (騎手: ${req.preferred_jockey})】 に自動登録しました！`);
-    fetchRaceRequests(); fetchRaces();
+    fetchRaceRequests(); fetchRaces(); fetchAdminLogs();
   };
 
   const handleRejectRaceRequest = async (req: any) => {
@@ -600,6 +625,8 @@ export default function SuperAdminConsole() {
       await supabase.from('races').update({ status }).eq('id', r.id);
     }
 
+    logAdminAction('12R一括ステータス変更', `全レースを【${label}】へ一括変更`, adminIp);
+
     if (status === 'open') {
       sendDiscordNotification('📢 本日の全12レース 投票受付開始！', '全レースの即パット投票がオープンしました！IPAT画面から投票できます！', 0x2563eb);
     } else {
@@ -607,7 +634,7 @@ export default function SuperAdminConsole() {
     }
 
     alert(`⚡ 1R〜12Rすべてを【 ${label} 】に一括変更しました！`);
-    fetchRaces();
+    fetchRaces(); fetchAdminLogs();
   };
 
   const handleResetAllRaces = async () => {
@@ -617,8 +644,9 @@ export default function SuperAdminConsole() {
     for (const r of races) {
       await supabase.from('races').update({ status: 'open', first_horse: null, second_horse: null, third_horse: null }).eq('id', r.id);
     }
+    logAdminAction('全レースリセット', '全12Rの出走馬・投票データをまっ散らに消去', adminIp);
     alert('🧹 全12Rの開催データをまっ散らにリセットしました！');
-    fetchRaces(); fetchAllBets();
+    fetchRaces(); fetchAllBets(); fetchAdminLogs();
   };
 
   const handleBulkImportHorses = async () => {
@@ -673,8 +701,10 @@ export default function SuperAdminConsole() {
       await supabase.from('races').insert([racePayload]);
     }
 
+    logAdminAction('レース条件変更', `【${selectedRaceNo}R】 ${editTitle} (発走: ${editStartTime})`, adminIp);
+
     alert(`🎉 【${selectedRaceNo}R】 の条件（発走時刻: ${editStartTime}）を保存しました！`);
-    fetchRaces();
+    fetchRaces(); fetchAdminLogs();
   };
 
   const handleAddOfficialAuction = async (e: React.FormEvent) => {
@@ -711,7 +741,8 @@ export default function SuperAdminConsole() {
   const handleUpdateUserTitle = async () => {
     if (!selectedUser) return;
     await supabase.from('users').update({ title: customTitleInput }).eq('id', selectedUser.id);
-    
+    logAdminAction('称号授与', `「${selectedUser.discord_name}」に称号【${customTitleInput}】を授与`, adminIp);
+
     sendDiscordNotification(
       '🎖️ 栄誉ある称号授与！',
       `**${selectedUser.discord_name}** 様に限定称号 **【 ${customTitleInput} 】** が与えられました！`,
@@ -719,7 +750,7 @@ export default function SuperAdminConsole() {
     );
 
     alert(`🎖️ 「${selectedUser.discord_name}」様に称号【 ${customTitleInput} 】を授与しました！`);
-    fetchUsers();
+    fetchUsers(); fetchAdminLogs();
   };
 
   const handleAutoAssignMarks = async () => {
@@ -773,7 +804,8 @@ export default function SuperAdminConsole() {
     if (!selectedUser) return;
     const newBal = Number(customBalanceInput);
     await supabase.from('users').update({ balance: newBal }).eq('id', selectedUser.id);
-    alert(`💰 「${selectedUser.discord_name}」様の残高を ${newBal.toLocaleString()} G に変更しました！`); fetchUsers();
+    logAdminAction('残高直接変更', `「${selectedUser.discord_name}」の残高を ${newBal.toLocaleString()} Gに変更`, adminIp);
+    alert(`💰 「${selectedUser.discord_name}」様の残高を ${newBal.toLocaleString()} G に変更しました！`); fetchUsers(); fetchAdminLogs();
   };
 
   const handleAddUserBalance = async (amount: number) => {
@@ -781,7 +813,8 @@ export default function SuperAdminConsole() {
     const currentBal = selectedUser.balance || 0;
     const newBal = currentBal + amount;
     await supabase.from('users').update({ balance: newBal }).eq('id', selectedUser.id);
-    alert(`🎉 「${selectedUser.discord_name}」様に ${amount.toLocaleString()} G を追加しました！`); fetchUsers();
+    logAdminAction('残高加減算', `「${selectedUser.discord_name}」の残高に ${amount.toLocaleString()} Gを加減算`, adminIp);
+    alert(`🎉 「${selectedUser.discord_name}」様に ${amount.toLocaleString()} G を追加しました！`); fetchUsers(); fetchAdminLogs();
   };
 
   const handleDeleteUser = async (userId?: string, userName?: string) => {
@@ -791,6 +824,7 @@ export default function SuperAdminConsole() {
     if (!confirm(`⚠️ 本当に「${targetName}」様のアカウントを完全に削除しますか？\n（関連するIPアドレス・所持金データも一括消去されます）`)) return;
 
     await supabase.from('users').delete().eq('id', targetId);
+    logAdminAction('ユーザー消去', `ユーザー「${targetName}」をDBから完全削除`, adminIp);
 
     sendDiscordNotification(
       '🚨 運営アカウント処置通知',
@@ -799,7 +833,7 @@ export default function SuperAdminConsole() {
     );
 
     alert(`🗑️ 「${targetName}」様のアカウントおよび登録IPアドレス情報を完全に消去しました。`);
-    if (targetId === selectedUserId) setSelectedUserId(''); fetchUsers();
+    if (targetId === selectedUserId) setSelectedUserId(''); fetchUsers(); fetchAdminLogs();
   };
 
   const handleAddHorseMaster = async (e: React.FormEvent) => {
@@ -925,6 +959,8 @@ export default function SuperAdminConsole() {
       first_horse: rank1, second_horse: rank2, third_horse: rank3, rank4, rank5, rank6, rank7, rank8, rank9
     }).eq('id', currentRace.id);
 
+    logAdminAction('レース結果確定', `【${selectedRaceNo}R】1着:${rank1}番, 2着:${rank2}番, 3着:${rank3}番`, adminIp);
+
     const aiDigest = `🎙️ **【AI実況ダイジェスト】**\n「最後の直線、激しい競り合いの中から堂々抜け出したのは **${rank1}番 ${h1 ? h1.name : ''}**！猛烈な追い上げを見せた **${rank2 ? `${rank2}番 ${h2 ? h2.name : ''}` : ''}** を振り切って見事栄冠に輝きました！」`;
 
     const desc = `
@@ -944,10 +980,9 @@ ${aiDigest}
     sendDiscordNotification(`🏆 【${selectedRaceNo}R ${currentRace.title || '特別競走'}】 AIレース確定速報！`, desc, 0x16a34a);
 
     alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！\nAI自動実況付きDiscord速報も自動送信されました！`); 
-    fetchRaces(); fetchUsers(); fetchHorseMasters();
+    fetchRaces(); fetchUsers(); fetchHorseMasters(); fetchAdminLogs();
   };
 
-  // 🛡️ 初回ログイン認証ロジック (成功時に管理用トークンを永続保存)
   const handleAdminLogin = (e: React.FormEvent) => { 
     e.preventDefault(); 
 
@@ -968,13 +1003,14 @@ ${aiDigest}
     const expectedPin = process.env.NEXT_PUBLIC_ADMIN_PIN || '0302';
 
     if (pinInput === expectedPin) {
-      // 成功時：失敗カウントクリア ＆ ブラウザに「管理者自動ログイントークン」を記憶させる！
       setFailedAttempts(0);
       setLockUntil(null);
       localStorage.removeItem('admin_failed_attempts');
       localStorage.removeItem('admin_lock_until');
       localStorage.setItem('app_admin_session_token', 'allowed_admin_session_active');
       setIsAuthenticated(true);
+
+      logAdminAction('管理者ログイン', '暗証番号認証成功によりログイン', adminIp);
 
       sendDiscordNotification(
         '🟢 管理者ログイン成功',
@@ -991,6 +1027,8 @@ ${aiDigest}
         setLockUntil(lockTime);
         localStorage.setItem('admin_lock_until', lockTime.toString());
 
+        logAdminAction('ログイン3回失敗ロック', 'ミス過多により15分間自動ロック起動', adminIp);
+
         sendDiscordNotification(
           '🚨 【警告】 管理者ログイン 3回連続失敗！自動ロック起動',
           `暗証番号が3回連続で間違えられたため、15分間の自動ロックを起動しました！\n試行IP: **${adminIp}**`,
@@ -1004,7 +1042,6 @@ ${aiDigest}
     }
   };
 
-  // 🚪 管理者手動ログアウト（トークン消去）
   const handleAdminLogout = () => {
     localStorage.removeItem('app_admin_session_token');
     setIsAuthenticated(false);
@@ -1015,13 +1052,11 @@ ${aiDigest}
       <div style={{ backgroundColor: '#ffffff', padding: '40px 20px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05)', textAlign: 'center', maxWidth: '380px', width: '100%' }}>
         <h2 style={{ color: '#1e3a8a', margin: '0 0 10px 0', fontSize: '20px', fontWeight: 'bold' }}>🍏 運営管理者ログイン</h2>
         
-        {/* 🌐 接続IPアドレス表示 */}
         <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '16px' }}>
           接続元IP: <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: isIpAllowed ? '#16a34a' : '#ef4444' }}>{adminIp || '取得中...'}</span>
           {!isIpAllowed && <div style={{ color: '#ef4444', fontWeight: 'bold', marginTop: '2px' }}>⚠️ 未許可IP（アクセス不可）</div>}
         </div>
 
-        {/* 🚨 15分ロックバナー */}
         {lockUntil && Date.now() < lockUntil ? (
           <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fca5a5', padding: '16px', borderRadius: '10px', color: '#dc2626', fontWeight: 'bold', fontSize: '13px', lineHeight: '1.5' }}>
             🚨 暗証番号ミス過多により一時ロック中<br />
@@ -1084,6 +1119,7 @@ ${aiDigest}
         {/* ナビゲーションタブ */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px' }}>
           <NavChip active={adminTab === 'users'} onClick={() => setAdminTab('users')} text="👥 プレイヤー・IP/端末照合" />
+          <NavChip active={adminTab === 'admin_logs'} onClick={() => setAdminTab('admin_logs')} text={`📝 操作履歴 (${adminLogs.length})`} />
           <NavChip active={adminTab === 'race'} onClick={() => setAdminTab('race')} text="⚡ 12R一括/時刻設定/返金" />
           <NavChip active={adminTab === 'horses'} onClick={() => setAdminTab('horses')} text="🗞️ 出走馬/AIオッズ/新聞" />
           <NavChip active={adminTab === 'anomaly_detect'} onClick={() => setAdminTab('anomaly_detect')} text={`⚠️ 異常検知 (${suspiciousBets.length})`} />
@@ -1120,11 +1156,66 @@ ${aiDigest}
 
         <div style={{ maxWidth: '950px', margin: '0 auto' }}>
 
+          {/* 📝 新機能：管理者3人の操作履歴ログ監視タブ */}
+          {adminTab === 'admin_logs' && (
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <div>
+                  <h3 style={{ margin: 0, color: '#1e3a8a', fontSize: '18px', fontWeight: 'bold' }}>
+                    📝 管理者操作履歴（オーディットログ）
+                  </h3>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                    管理者3人が行ったすべての設定変更・コイン付与・レース操作が自動記録されます。
+                  </div>
+                </div>
+                <button onClick={fetchAdminLogs} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                  🔄 最新ログ読み込み
+                </button>
+              </div>
+
+              {adminLogs.length === 0 ? (
+                <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '10px' }}>
+                  記録された操作履歴はありません。
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '600px' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: '#1e3a8a', color: '#fff', textAlign: 'left' }}>
+                        <th style={{ padding: '8px 10px', width: '140px' }}>日時</th>
+                        <th style={{ padding: '8px 10px', width: '130px' }}>実行IP</th>
+                        <th style={{ padding: '8px 10px', width: '130px' }}>操作種別</th>
+                        <th style={{ padding: '8px 10px' }}>詳細内容</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminLogs.map((log) => (
+                        <tr key={log.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: '#ffffff' }}>
+                          <td style={{ padding: '8px 10px', fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                            {new Date(log.created_at).toLocaleString('ja-JP')}
+                          </td>
+                          <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#2563eb' }}>
+                            🌐 {log.admin_ip || '不明'}
+                          </td>
+                          <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#dc2626' }}>
+                            {log.action_type}
+                          </td>
+                          <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#0f172a' }}>
+                            {log.details}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 👥 プレイヤー管理 (トークン・IP・端末・各種操作) */}
           {adminTab === 'users' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               
-              {/* 🔑 セッショントークン管理コントロール */}
               <div style={{ backgroundColor: '#eff6ff', border: '2px solid #2563eb', borderRadius: '16px', padding: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h3 style={{ margin: 0, color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>
