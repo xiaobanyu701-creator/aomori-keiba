@@ -51,10 +51,7 @@ export default function SuperAdminConsole() {
   const [customPinInput, setCustomPinInput] = useState<string>('');
   const [customTitleInput, setCustomTitleInput] = useState<string>('万馬券ハンター');
 
-  // 🎁 全ユーザー一括配布用
   const [bulkGiftAmount, setBulkImportGiftAmount] = useState<number>(1000000);
-
-  // 🌐 IPアドレス管理・検索用
   const [ipSearchQuery, setIpSearchQuery] = useState<string>('');
 
   const [breedEditOwnerName, setBreedEditOwnerName] = useState<string>('');
@@ -104,7 +101,15 @@ export default function SuperAdminConsole() {
   const [transferHorseName, setTransferHorseName] = useState('');
   const [transferTargetOwner, setTransferTargetOwner] = useState('');
 
-  // 🛡️ 初期読み込み
+  // 📢 アプリ内 ＆ スマホへ全一斉通知を発信するヘルパー関数
+  const sendBroadcastNotification = async (title: string, message: string, type: string = 'info') => {
+    try {
+      await supabase.from('notifications').insert([{ title, message, type }]);
+    } catch (e) {
+      console.error('一斉通知送信失敗:', e);
+    }
+  };
+
   useEffect(() => {
     const initAdminSecurity = async () => {
       let currentIp = '';
@@ -185,11 +190,20 @@ export default function SuperAdminConsole() {
       races.forEach(async (r) => {
         if (r.status === 'open' && r.start_time && currentHHMM >= r.start_time) {
           await supabase.from('races').update({ status: 'closed' }).eq('id', r.id);
+          
           sendDiscordNotification(
             `🔒 【${r.race_number}R】 投票自動締め切り`,
             `発走予定時刻（${r.start_time}）に達したため、【${r.race_number}R ${r.title || ''}】の投票受付を自動締め切りました！`,
             0xdc2626
           );
+
+          // 🔔 スマホ一斉通知送信
+          sendBroadcastNotification(
+            `🔒 【${r.race_number}R】 投票締め切り`,
+            `【${r.race_number}R ${r.title || ''}】の発走時刻に達したため、投票受付を締め切りました！`,
+            'close'
+          );
+
           logAdminAction('自動締切', `【${r.race_number}R】発走時刻に達したため自動締め切り`, 'SYSTEM');
           fetchRaces();
         }
@@ -629,8 +643,12 @@ export default function SuperAdminConsole() {
 
     if (status === 'open') {
       sendDiscordNotification('📢 本日の全12レース 投票受付開始！', '全レースの即パット投票がオープンしました！IPAT画面から投票できます！', 0x2563eb);
+      // 🔔 一斉スマホ通知
+      sendBroadcastNotification('📢 本日の全12レース 受付開始！', '全レースの即パット投票がオープンしました！今すぐIPATから投票しましょう！', 'open');
     } else {
       sendDiscordNotification('🔒 全レース 投票一括締め切り', '本日全レースの投票受付が終了しました！発走までしばらくお待ちください。', 0xdc2626);
+      // 🔔 一斉スマホ通知
+      sendBroadcastNotification('🔒 全12レース 一括締切', '本日全レースの投票受付が終了しました！', 'close');
     }
 
     alert(`⚡ 1R〜12Rすべてを【 ${label} 】に一括変更しました！`);
@@ -917,7 +935,7 @@ export default function SuperAdminConsole() {
           if (trio.length === 3 && trio.every(h => top3.includes(h))) {
             isWin = true; winOdds = 22.0;
           }
-        } else if (bet.bet_type === '3连単' && sel === `${rank1}-${rank2}-${rank3}`) {
+        } else if (bet.bet_type === '3連単' && sel === `${rank1}-${rank2}-${rank3}`) {
           isWin = true; winOdds = 65.0;
         }
 
@@ -961,6 +979,13 @@ export default function SuperAdminConsole() {
 
     logAdminAction('レース結果確定', `【${selectedRaceNo}R】1着:${rank1}番, 2着:${rank2}番, 3着:${rank3}番`, adminIp);
 
+    // 🔔 スマホ一斉結果確定通知
+    sendBroadcastNotification(
+      `🏆 【${selectedRaceNo}R】 レース確定！`,
+      `1着: ${rank1}番 ${h1 ? h1.name : ''}\n的中配当金が各口座へ振込されました！`,
+      'result'
+    );
+
     const aiDigest = `🎙️ **【AI実況ダイジェスト】**\n「最後の直線、激しい競り合いの中から堂々抜け出したのは **${rank1}番 ${h1 ? h1.name : ''}**！猛烈な追い上げを見せた **${rank2 ? `${rank2}番 ${h2 ? h2.name : ''}` : ''}** を振り切って見事栄冠に輝きました！」`;
 
     const desc = `
@@ -979,7 +1004,7 @@ ${aiDigest}
 `;
     sendDiscordNotification(`🏆 【${selectedRaceNo}R ${currentRace.title || '特別競走'}】 AIレース確定速報！`, desc, 0x16a34a);
 
-    alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！\nAI自動実況付きDiscord速報も自動送信されました！`); 
+    alert(`🏆 【${selectedRaceNo}R】の結果を確定しました！\nAI自動実況付きDiscord速報 ＆ スマホ一斉通知が送信されました！`); 
     fetchRaces(); fetchUsers(); fetchHorseMasters(); fetchAdminLogs();
   };
 
@@ -992,7 +1017,6 @@ ${aiDigest}
     }
 
     if (!isIpAllowed) {
-      // 🔒 修正：Discord通知からIPアドレスの非表示化
       sendDiscordNotification(
         '🚨 未許可端末からの管理者ログイン試行遮断！',
         `管理者未登録の端末からアクセス試行がありました！`,
@@ -1013,7 +1037,6 @@ ${aiDigest}
 
       logAdminAction('管理者ログイン', '暗証番号認証成功によりログイン', adminIp);
 
-      // 🔒 修正：Discord通知からIPアドレスの非表示化
       sendDiscordNotification(
         '🟢 管理者ログイン成功',
         `管理者画面へ正しくログインされました。`,
@@ -1031,7 +1054,6 @@ ${aiDigest}
 
         logAdminAction('ログイン3回失敗ロック', 'ミス過多により15分間自動ロック起動', adminIp);
 
-        // 🔒 修正：Discord通知からIPアドレスの非表示化
         sendDiscordNotification(
           '🚨 【警告】 管理者ログイン 3回連続失敗！自動ロック起動',
           `暗証番号が3回連続で間違えられたため、15分間の自動ロックを起動しました！`,
@@ -1119,7 +1141,6 @@ ${aiDigest}
           </div>
         </div>
 
-        {/* ナビゲーションタブ */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px' }}>
           <NavChip active={adminTab === 'users'} onClick={() => setAdminTab('users')} text="👥 プレイヤー・IP/端末照合" />
           <NavChip active={adminTab === 'admin_logs'} onClick={() => setAdminTab('admin_logs')} text={`📝 操作履歴 (${adminLogs.length})`} />
@@ -1219,7 +1240,6 @@ ${aiDigest}
           {adminTab === 'users' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               
-              {/* 🔑 セッショントークン管理コントロール */}
               <div style={{ backgroundColor: '#eff6ff', border: '2px solid #2563eb', borderRadius: '16px', padding: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h3 style={{ margin: 0, color: '#1e3a8a', fontSize: '16px', fontWeight: 'bold' }}>

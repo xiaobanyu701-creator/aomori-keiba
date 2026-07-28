@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { saveSessionToken, checkAutoLogin, logoutUser } from '@/lib/auth';
 import { getAiTrackmanComment } from '@/lib/aiEngine';
+import { requestNotificationPermission, sendLocalPushNotification } from '@/lib/pushNotification';
 
 export default function IPATPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -29,6 +30,10 @@ export default function IPATPage() {
   const [bidAmountInput, setBidAmountInput] = useState<number>(100000);
 
   const [pastResults, setPastResults] = useState<{ [key: string]: any[] }>({});
+
+  // 🔔 リアルタイム画面内トースト通知 ＆ スマホ通知ステート
+  const [toastNotification, setToastNotification] = useState<{ title: string; message: string } | null>(null);
+  const [isNotificationEnabled, setIsNotificationEnabled] = useState(false);
 
   // 🎯 馬券購入関連ステート
   const [betType, setBetType] = useState('単勝');
@@ -66,7 +71,12 @@ export default function IPATPage() {
     const maint = localStorage.getItem('app_maintenance_mode') === 'true';
     setIsMaintenance(maint);
 
-    // ⚡ ⚡ ⚡ Supabase Realtime (リアルタイム自動更新チャネルの接続) ⚡ ⚡ ⚡
+    // 🔔 スマホの通知許可状態の初期確認
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setIsNotificationEnabled(Notification.permission === 'granted');
+    }
+
+    // ⚡ ⚡ ⚡ Supabase Realtime (リアルタイム自動更新 ＆ 一斉通知チャネル) ⚡ ⚡ ⚡
     const realtimeChannel = supabase
       .channel('public_realtime_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'races' }, () => {
@@ -81,12 +91,36 @@ export default function IPATPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bets' }, () => {
         if (currentRace?.id) fetchHorsesAndOnlineOdds(currentRace.id);
       })
+      // 🔔 1. レース受付開始/締め切り/結果確定の通知リアルタイム受信
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
+        const newNotif = payload.new;
+        if (newNotif) {
+          // ① アプリ画面右上にポップアップバナーを表示
+          setToastNotification({ title: newNotif.title, message: newNotif.message });
+          setTimeout(() => setToastNotification(null), 6000);
+
+          // ② スマホのプッシュ通知を送信（端末通知ONの場合）
+          sendLocalPushNotification(`🍏 ${newNotif.title}`, newNotif.message);
+        }
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(realtimeChannel);
     };
   }, []);
+
+  // 🔔 スマホの通知許可をユーザーに求める処理
+  const handleEnableNotification = async () => {
+    const granted = await requestNotificationPermission();
+    if (granted) {
+      setIsNotificationEnabled(true);
+      sendLocalPushNotification('🍏 青森県競馬 即パット', '通知設定が完了しました！レースの受付・締切・確定通知をお届けします。');
+      alert('🔔 スマホ通知をONに設定しました！');
+    } else {
+      alert('❌ 通知設定が拒否されたか非対応のブラウザです。ブラウザの設定から通知を許可してください。');
+    }
+  };
 
   useEffect(() => {
     if (races.length > 0) {
@@ -287,7 +321,6 @@ export default function IPATPage() {
           await supabase.from('users').update({ ip_address: userIp }).eq('id', exUser.id);
           exUser.ip_address = userIp;
         }
-        // 🔑 トークンを発行して保存
         await saveSessionToken(exUser);
         setCurrentUser(exUser);
       } else {
@@ -329,7 +362,6 @@ export default function IPATPage() {
     }
   };
 
-  // 🚪 ログアウト処理（トークン削除）
   const handleSignOut = async () => {
     if (currentUser) {
       await logoutUser(currentUser.id);
@@ -337,7 +369,6 @@ export default function IPATPage() {
     setCurrentUser(null);
   };
 
-  // 🎯 ボックス買い選択トグル
   const handleToggleBoxHorse = (horseNo: string) => {
     if (boxSelectedHorses.includes(horseNo)) {
       setBoxSelectedHorses(boxSelectedHorses.filter(h => h !== horseNo));
@@ -346,7 +377,6 @@ export default function IPATPage() {
     }
   };
 
-  // 🎫 馬券購入処理
   const handleBuyBet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return alert('ログインしてください');
@@ -430,9 +460,21 @@ export default function IPATPage() {
   });
 
   return (
-    <div style={{ backgroundColor: '#f1f5f9', minHeight: '100vh', fontFamily: 'sans-serif', color: '#0f172a' }}>
+    <div style={{ backgroundColor: '#f1f5f9', minHeight: '100vh', fontFamily: 'sans-serif', color: '#0f172a', position: 'relative' }}>
       
-      {/* 📱 スマホ対応レスポンシブヘッダー */}
+      {/* 🔔 リアルタイムトースト通知ポップアップバナー */}
+      {toastNotification && (
+        <div style={{ position: 'fixed', top: '16px', right: '16px', zIndex: 10000, backgroundColor: '#1e3a8a', color: '#fff', padding: '14px 20px', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.25)', border: '2px solid #60a5fa', maxWidth: '320px' }}>
+          <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px', color: '#fef08a' }}>
+            📢 {toastNotification.title}
+          </div>
+          <div style={{ fontSize: '12px', lineHeight: '1.4' }}>
+            {toastNotification.message}
+          </div>
+        </div>
+      )}
+
+      {/* 📱 レスポンシブヘッダー */}
       <header
         style={{
           backgroundColor: '#1e3a8a',
@@ -455,6 +497,16 @@ export default function IPATPage() {
         </div>
 
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* 🔔 スマホ通知ONボタン（未許可時のみ表示） */}
+          {!isNotificationEnabled && (
+            <button
+              onClick={handleEnableNotification}
+              style={{ padding: '6px 12px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: '16px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              🔔 通知を許可
+            </button>
+          )}
+
           {currentUser ? (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <button
