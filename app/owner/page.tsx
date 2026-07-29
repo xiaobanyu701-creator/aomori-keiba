@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 
 export default function OwnerPage() {
+  const [mounted, setMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [discordInput, setDiscordInput] = useState('');
   const [pinInput, setPinInput] = useState('');
@@ -28,6 +29,7 @@ export default function OwnerPage() {
   const [selectedJockey, setSelectedJockey] = useState('');
 
   useEffect(() => {
+    setMounted(true);
     fetchJockeys();
     fetchPedigree();
   }, []);
@@ -52,16 +54,24 @@ export default function OwnerPage() {
   };
 
   const fetchPedigree = async () => {
-    const { data } = await supabase.from('horse_masters').select('*').eq('status', '種牡馬/繁殖牝馬');
-    if (data) {
-      setPedigreeList(data);
-      if (data.length > 0) {
+    try {
+      const { data } = await supabase.from('horse_masters').select('*').eq('status', '種牡馬/繁殖牝馬');
+      if (data && data.length > 0) {
+        setPedigreeList(data);
         setSelectedSire(data[0].name);
         setSelectedDam(data[0].name);
+      } else {
+        if (typeof window !== 'undefined') {
+          const local = JSON.parse(localStorage.getItem('app_pedigree_masters') || '[]');
+          setPedigreeList(local);
+          if (local.length > 0) {
+            setSelectedSire(local[0].name);
+            setSelectedDam(local[0].name);
+          }
+        }
       }
-    } else {
-      const local = JSON.parse(localStorage.getItem('app_pedigree_masters') || '[]');
-      setPedigreeList(local);
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -74,13 +84,19 @@ export default function OwnerPage() {
         .eq('owner_name', currentUser.discord_name);
 
       if (data && !error) {
-        setMyHorses([...data].reverse());
-        if (data.length > 0 && !selectedHorseName) {
-          setSelectedHorseName(data[0].name);
+        const sorted = [...data].reverse();
+        setMyHorses(sorted);
+        if (sorted.length > 0 && !selectedHorseName) {
+          setSelectedHorseName(sorted[0].name);
         }
       } else {
-        const local = JSON.parse(localStorage.getItem(`my_2yo_horses_${currentUser.discord_name}`) || '[]');
-        setMyHorses(local);
+        if (typeof window !== 'undefined') {
+          const local = JSON.parse(localStorage.getItem(`my_2yo_horses_${currentUser.discord_name}`) || '[]');
+          setMyHorses(local);
+          if (local.length > 0 && !selectedHorseName) {
+            setSelectedHorseName(local[0].name);
+          }
+        }
       }
     } catch (e) {
       console.error(e);
@@ -93,7 +109,8 @@ export default function OwnerPage() {
     if (!discordInput || !pinInput) return alert('名前とPINコードを入力してください');
 
     const { data: users } = await supabase.from('users').select('*');
-    const exUser = users?.find((u) => u.discord_name === discordInput);
+    const safeUsers = users || [];
+    const exUser = safeUsers.find((u) => u.discord_name === discordInput);
 
     let userIp = '';
     try {
@@ -116,7 +133,7 @@ export default function OwnerPage() {
       }
     } else {
       if (userIp) {
-        const isIpExists = users?.some((u) => u.ip_address === userIp);
+        const isIpExists = safeUsers.some((u) => u.ip_address === userIp);
         if (isIpExists) {
           return alert(
             '❌ 複数アカウントの作成は禁止されています！\n（すでにこのネットワーク/回線からアカウントが作成されています）'
@@ -169,7 +186,7 @@ export default function OwnerPage() {
       cost = 60000;
     }
 
-    if ((currentUser.balance || 0) < cost) return alert(`所持金が足りません (${cost.toLocaleString()} G 必要)`);
+    if ((currentUser?.balance || 0) < cost) return alert(`所持金が足りません (${cost.toLocaleString()} G 必要)`);
 
     // 🩺 2. AI故障率計算フラグ
     const fatigue = horse.fatigue || 20;
@@ -198,10 +215,10 @@ export default function OwnerPage() {
     loadMyHorses();
   };
 
-  // ♨️ AI温泉治療機能
+  // 温泉治療機能
   const handleHealHorseWithOnsen = async (horse: any) => {
     const cost = 200000;
-    if ((currentUser.balance || 0) < cost) return alert('治療費 (200,000 G) が足りません');
+    if ((currentUser?.balance || 0) < cost) return alert('治療費 (200,000 G) が足りません');
     if (!confirm(`「${horse.name}」を温泉施設で完治復帰させますか？ (費用: 200,000 G)`)) return;
 
     await supabase.from('horse_masters').update({ status: '現役', condition: '良好', fatigue: 0 }).eq('id', horse.id);
@@ -217,10 +234,10 @@ export default function OwnerPage() {
   const getAiBreedingReport = () => {
     if (!selectedSire || !selectedDam) return null;
     const isSame = selectedSire === selectedDam;
-    
+
     let stars = '★★★★☆ (相性良好)';
     let comment = 'スピードとパワーのバランスが良い黄金配合です。マイル〜中距離で期待できます！';
-    
+
     if (selectedSire.includes('サンデー') || selectedDam.includes('サンデー')) {
       stars = '★★★★★ (★5 黄金ニックス)';
       comment = '『奇跡の血量 3×4』検出！爆発的な瞬発力を秘めた最高峰配合です！';
@@ -238,7 +255,7 @@ export default function OwnerPage() {
     const itemName = itemType === 'carrot' ? '🥕 高級ニンジン' : '🍎 特選リンゴ';
     const targetCondition = itemType === 'carrot' ? '良好' : '絶好調';
 
-    if ((currentUser.balance || 0) < cost) return alert(`所持金が足りません (${cost.toLocaleString()} G 必要)`);
+    if ((currentUser?.balance || 0) < cost) return alert(`所持金が足りません (${cost.toLocaleString()} G 必要)`);
     if (!confirm(`「${horseName}」に【${itemName}】を与えますか？ (費用: ${cost.toLocaleString()} G)`)) return;
 
     await supabase.from('horse_masters').update({ condition: targetCondition }).eq('id', horseId);
@@ -273,38 +290,49 @@ export default function OwnerPage() {
     loadMyHorses();
   };
 
+  // 🧬 スタホ配合
   const handleStarhorseBreed = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!foalNameInput.trim()) return alert('仔馬の名前を入力してください');
     if (!selectedSire || !selectedDam) return alert('父馬と母馬を選択してください');
     if (selectedSire === selectedDam) return alert('父馬と母馬には異なる血統を選択してください');
 
-    const sireObj = pedigreeList.find(p => p.name === selectedSire);
+    const sireObj = pedigreeList.find((p) => p.name === selectedSire);
     const isMySire = sireObj?.owner_name === currentUser.discord_name;
     const fee = isMySire ? 0 : 500000;
 
-    if ((currentUser.balance || 0) < fee) return alert('種付け費用が足りません');
+    if ((currentUser?.balance || 0) < fee) return alert('種付け費用が足りません');
 
     const ranks = ['SS', 'S', 'A', 'B'];
     const inheritedRank = isMySire ? 'SS' : ranks[Math.floor(Math.random() * ranks.length)];
 
-    await supabase.from('horse_masters').insert([
-      {
-        name: foalNameInput,
-        owner_name: currentUser.discord_name,
-        sire_name: selectedSire,
-        dam_name: selectedDam,
-        rank: inheritedRank,
-        speed: 'S',
-        stamina: 'A',
-        guts: 'A',
-        temper: 'A',
-        status: '現役',
-        condition: '良好',
-        total_prize: 0,
-        generation: 2,
-      },
-    ]);
+    const payload: any = {
+      name: foalNameInput.trim(),
+      owner_name: currentUser.discord_name,
+      sire_name: selectedSire,
+      dam_name: selectedDam,
+      rank: inheritedRank,
+      speed: 'S',
+      stamina: 'A',
+      guts: 'A',
+      temper: 'A',
+      status: '現役',
+      condition: '良好',
+      total_prize: 0,
+      generation: 2,
+    };
+
+    let { error } = await supabase.from('horse_masters').insert([payload]);
+
+    if (error) {
+      console.warn('generationカラム未存在のため、互換モードで保存します:', error.message);
+      delete payload.generation;
+      const { error: fallbackError } = await supabase.from('horse_masters').insert([payload]);
+
+      if (fallbackError) {
+        return alert(`❌ 生産保存エラー: ${fallbackError.message}`);
+      }
+    }
 
     const newBal = (currentUser.balance || 0) - fee;
     await supabase.from('users').update({ balance: newBal }).eq('id', currentUser.id);
@@ -312,7 +340,8 @@ export default function OwnerPage() {
     setCurrentUser({ ...currentUser, balance: newBal });
     setFoalNameInput('');
     alert(`🎉 【${selectedSire} × ${selectedDam}】の超良血配合により「${foalNameInput}」が誕生しました！\n【確定素質: ${inheritedRank}ランク】`);
-    loadMyHorses();
+
+    await loadMyHorses();
     setActiveTab('my_horses');
   };
 
@@ -339,11 +368,15 @@ export default function OwnerPage() {
   };
 
   const handleTrainHorse = async (horseId: string, horseName: string, type: string) => {
-    if ((currentUser.balance || 0) < 50000) return alert('調教費用 (50,000 G) が足りません');
+    if ((currentUser?.balance || 0) < 50000) return alert('調教費用 (50,000 G) が足りません');
     if (!confirm(`「${horseName}」を【${type}調教】しますか？ (費用: 50,000 G)`)) return;
 
-    const successRate = Number(localStorage.getItem('training_success_rate') || 70);
-    const superRate = Number(localStorage.getItem('training_super_rate') || 15);
+    let successRate = 70;
+    let superRate = 15;
+    if (typeof window !== 'undefined') {
+      successRate = Number(localStorage.getItem('training_success_rate') || 70);
+      superRate = Number(localStorage.getItem('training_super_rate') || 15);
+    }
 
     const rand = Math.random() * 100;
     let resultType = 'fail';
@@ -380,8 +413,13 @@ export default function OwnerPage() {
 
     await supabase.from('horse_masters').update({ status: '種牡馬/繁殖牝馬' }).eq('id', horseId);
 
-    const local = JSON.parse(localStorage.getItem('app_pedigree_masters') || '[]');
-    localStorage.setItem('app_pedigree_masters', JSON.stringify([{ id: horseId, name: horseName, owner_name: currentUser.discord_name, status: '種牡馬/繁殖牝馬' }, ...local]));
+    if (typeof window !== 'undefined') {
+      const local = JSON.parse(localStorage.getItem('app_pedigree_masters') || '[]');
+      localStorage.setItem(
+        'app_pedigree_masters',
+        JSON.stringify([{ id: horseId, name: horseName, owner_name: currentUser.discord_name, status: '種牡馬/繁殖牝馬' }, ...local])
+      );
+    }
 
     alert(`🧬 「${horseName}」を血統ライブラリへ登録しました！`);
     loadMyHorses();
@@ -413,6 +451,8 @@ export default function OwnerPage() {
 
   const aiBreedingReport = getAiBreedingReport();
 
+  if (!mounted) return null; // Hydration mismatch 防止
+
   return (
     <div style={{ backgroundColor: '#f1f5f9', minHeight: '100vh', fontFamily: 'sans-serif', color: '#0f172a' }}>
       <header
@@ -425,7 +465,7 @@ export default function OwnerPage() {
           alignItems: 'center',
           boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
           flexWrap: 'wrap',
-          gap: '8px'
+          gap: '8px',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -496,11 +536,9 @@ export default function OwnerPage() {
                 </div>
               </div>
             )}
-
           </div>
         ) : (
           <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0' }}>
-            
             <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px', marginBottom: '20px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <TabBtn active={activeTab === 'my_horses'} onClick={() => setActiveTab('my_horses')} text="📋 所有馬" />
               <TabBtn active={activeTab === 'ai_hospital'} onClick={() => setActiveTab('ai_hospital')} text="🎓 AI調教・診療所" />
@@ -566,7 +604,7 @@ export default function OwnerPage() {
                           {/* 🩺 AI温泉治療ボタン */}
                           {isInjured && (
                             <button onClick={() => handleHealHorseWithOnsen(h)} style={{ width: '100%', marginTop: '10px', backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
-                              ♨️ AI温泉リハビリ施設で完治復帰する (20万G)
+                              温泉リハビリ施設で完治復帰する (20万G)
                             </button>
                           )}
 
@@ -595,7 +633,6 @@ export default function OwnerPage() {
                                 <button onClick={() => handleRegisterPedigree(h.id, h.name)} style={{ flex: 1, backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '6px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>種牡馬 🧬</button>
                                 <button onClick={() => handleRetireRequest(h.id, h.name)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>引退 🛑</button>
                               </div>
-
                             </div>
                           )}
                         </div>
@@ -606,7 +643,7 @@ export default function OwnerPage() {
               </div>
             )}
 
-            {/* 🎓 1 & 🩺 2 新タブ：AI調教＆診療所 */}
+            {/* AI調教＆診療所 */}
             {activeTab === 'ai_hospital' && (
               <div>
                 <h3 style={{ margin: '0 0 12px 0', color: '#1e3a8a', fontSize: '18px' }}>🎓 AI調教師 ＆ 🩺 獣医リハビリ診療所</h3>
@@ -630,7 +667,7 @@ export default function OwnerPage() {
                         <div>
                           {isInjured ? (
                             <button onClick={() => handleHealHorseWithOnsen(h)} style={{ padding: '8px 14px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
-                              ♨️ 温泉治療 (20万G)
+                              温泉治療 (20万G)
                             </button>
                           ) : (
                             <button onClick={() => handleAiTrainerAutoTrain(h, 'fujisawa')} style={{ padding: '8px 14px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
@@ -645,7 +682,7 @@ export default function OwnerPage() {
               </div>
             )}
 
-            {/* 🧬 4. AI配合評価＆血統アナライザータブ */}
+            {/* AI配合評価＆血統アナライザータブ */}
             {activeTab === 'starhorse_breed' && (
               <div style={{ maxWidth: '500px' }}>
                 <h3 style={{ margin: '0 0 12px 0', color: '#16a34a', fontSize: '18px' }}>🧬 AI血統配合診断アナライザー</h3>
@@ -656,9 +693,9 @@ export default function OwnerPage() {
                 <form onSubmit={handleStarhorseBreed} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <div>
                     <label style={labelStyle}>① 父馬（種牡馬）</label>
-                    <select value={selectedSire} onChange={e => setSelectedSire(e.target.value)} style={inputStyle}>
-                      {pedigreeList.map(p => (
-                        <option key={p.id} value={p.name}>
+                    <select value={selectedSire} onChange={(e) => setSelectedSire(e.target.value)} style={inputStyle}>
+                      {pedigreeList.map((p) => (
+                        <option key={p.id || p.name} value={p.name}>
                           🧬 {p.name} ({p.owner_name === currentUser.discord_name ? '自分・無料' : '他・50万G'})
                         </option>
                       ))}
@@ -667,9 +704,9 @@ export default function OwnerPage() {
 
                   <div>
                     <label style={labelStyle}>② 母馬（繁殖牝馬）</label>
-                    <select value={selectedDam} onChange={e => setSelectedDam(e.target.value)} style={inputStyle}>
-                      {pedigreeList.map(p => (
-                        <option key={p.id} value={p.name}>
+                    <select value={selectedDam} onChange={(e) => setSelectedDam(e.target.value)} style={inputStyle}>
+                      {pedigreeList.map((p) => (
+                        <option key={p.id || p.name} value={p.name}>
                           🧬 {p.name} ({p.owner_name})
                         </option>
                       ))}
@@ -686,7 +723,7 @@ export default function OwnerPage() {
 
                   <div>
                     <label style={labelStyle}>③ 仔馬の名前</label>
-                    <input type="text" placeholder="例: カマクラキング" value={foalNameInput} onChange={e => setFoalNameInput(e.target.value)} style={inputStyle} required />
+                    <input type="text" placeholder="例: カマクラキング" value={foalNameInput} onChange={(e) => setFoalNameInput(e.target.value)} style={inputStyle} required />
                   </div>
 
                   <button type="submit" style={{ padding: '14px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
@@ -705,8 +742,8 @@ export default function OwnerPage() {
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '12px' }}>
-                    {pedigreeList.map((p) => (
-                      <div key={p.id} style={{ backgroundColor: '#faf5ff', padding: '14px', borderRadius: '12px', border: '2px solid #c084fc' }}>
+                    {pedigreeList.map((p, idx) => (
+                      <div key={p.id || idx} style={{ backgroundColor: '#faf5ff', padding: '14px', borderRadius: '12px', border: '2px solid #c084fc' }}>
                         <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#7e22ce' }}>🧬 {p.name}</div>
                         <div style={{ fontSize: '12px', color: '#6b21a8', marginTop: '4px' }}>元馬主: {p.owner_name}</div>
                       </div>
@@ -763,12 +800,11 @@ export default function OwnerPage() {
                 </form>
               </div>
             )}
-
           </div>
         )}
       </div>
 
-      {/* 🏆 出走＆騎手エントリーモーダル */}
+      {/* 出走＆騎手エントリーモーダル */}
       {entryModalHorse && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100, padding: '16px' }}>
           <div style={{ backgroundColor: '#fff', padding: '24px 16px', borderRadius: '16px', maxWidth: '400px', width: '100%', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
@@ -778,8 +814,8 @@ export default function OwnerPage() {
             <form onSubmit={handleSubmitRaceEntry} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <label style={labelStyle}>出走希望レース (1〜12R)</label>
-                <select value={targetRaceNo} onChange={e => setTargetRaceNo(Number(e.target.value))} style={inputStyle}>
-                  {Array.from({ length: 12 }, (_, i) => i + 1).map(no => (
+                <select value={targetRaceNo} onChange={(e) => setTargetRaceNo(Number(e.target.value))} style={inputStyle}>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((no) => (
                     <option key={no} value={no}>【{no}R】に出走希望</option>
                   ))}
                 </select>
@@ -787,8 +823,8 @@ export default function OwnerPage() {
 
               <div>
                 <label style={labelStyle}>希望する騎手 (主戦)</label>
-                <select value={preferredJockey} onChange={e => setPreferredJockey(e.target.value)} style={inputStyle}>
-                  {jockeyList.map(j => (
+                <select value={preferredJockey} onChange={(e) => setPreferredJockey(e.target.value)} style={inputStyle}>
+                  {jockeyList.map((j) => (
                     <option key={j.id} value={j.name}>🏇 {j.name}</option>
                   ))}
                 </select>
