@@ -698,6 +698,7 @@ export default function SuperAdminConsole() {
     fetchHorses(currentRace.id);
   };
 
+  // 🛠️ エラー処理を追加・修正した handleUpdateRaceInfo
   const handleUpdateRaceInfo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editTitle.trim()) return alert('レース名を入力してください');
@@ -714,10 +715,20 @@ export default function SuperAdminConsole() {
       status: currentRace?.status || 'open',
     };
 
+    let error;
+
     if (currentRace?.id) {
-      await supabase.from('races').update(racePayload).eq('id', currentRace.id);
+      const res = await supabase.from('races').update(racePayload).eq('id', currentRace.id);
+      error = res.error;
     } else {
-      await supabase.from('races').insert([racePayload]);
+      const res = await supabase.from('races').insert([racePayload]);
+      error = res.error;
+    }
+
+    if (error) {
+      console.error('レース保存エラー:', error);
+      alert(`❌ 保存に失敗しました: ${error.message}\n※Supabaseのracesテーブルに必要なカラムが存在するか確認してください。`);
+      return;
     }
 
     logAdminAction('レース条件変更', `【${selectedRaceNo}R】 ${editTitle} (発走: ${editStartTime})`, adminIp);
@@ -1865,7 +1876,7 @@ ${aiDigest}
                           <td>
                             <div style={{ display: 'flex', gap: '4px' }}>
                               <button onClick={() => handleInjuryOrHealHorse(hm.id, hm.name, 'injure')} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '3px 6px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>💉 屈腱炎</button>
-                              <button onClick={() => handleInjuryOrHealHorse(hm.id, hm.name, 'heal')} style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '3px 6px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>♨️ 完治復帰</button>
+                              <button onClick={() => handleInjuryOrHealHorse(hm.id, hm.name, 'heal')} style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '3px 6px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>温泉 完治復帰</button>
                             </div>
                           </td>
                           <td><button onClick={() => handleToggleRestingStatus(hm.id, hm.status)} style={{ backgroundColor: hm.status === '放牧中' ? '#16a34a' : '#3b82f6', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '10px' }}>{hm.status === '放牧中' ? '復帰' : '放牧'}</button></td>
