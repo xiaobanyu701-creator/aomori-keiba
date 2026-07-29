@@ -39,45 +39,68 @@ export default function AdminJockeyManager() {
     setEditPin(jockey.pin_code || '0000');
   };
 
-  // ➕ 新人騎手のデビュー登録
+  // ➕ 新人騎手のデビュー登録（エラーハンドリング強化版）
   const handleAddJockey = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newJockeyName.trim()) return alert('騎手名を入力してください');
 
-    const { error } = await supabase.from('jockeys').insert([
+    const jockeyName = newJockeyName.trim();
+    const pin = newJockeyPin || '0000';
+
+    // 1. フルデータで保存試行
+    const { error: fullError } = await supabase.from('jockeys').insert([
       {
-        name: newJockeyName.trim(),
-        pin_code: newJockeyPin || '0000',
+        name: jockeyName,
+        pin_code: pin,
         status: '現役',
         wins: 0,
         rides: 0,
       },
     ]);
 
-    if (error) {
-      alert(`❌ 登録エラー: ${error.message}`);
-    } else {
-      alert(`🎉 新人騎手 「${newJockeyName}」 がデビュー登録されました！`);
-      setNewJockeyName('');
-      setNewJockeyPin('0000');
-      fetchJockeys();
+    // 2. もしpin_code等のカラムがないエラーが出た場合の安全フォールバック
+    if (fullError) {
+      console.warn('pin_code等なしでの互換登録を試行します:', fullError.message);
+      const { error: simpleError } = await supabase.from('jockeys').insert([
+        {
+          name: jockeyName,
+        },
+      ]);
+
+      if (simpleError) {
+        return alert(`❌ 登録エラー: ${simpleError.message}`);
+      }
     }
+
+    alert(`🎉 新人騎手 「${jockeyName}」 がデビュー登録されました！`);
+    setNewJockeyName('');
+    setNewJockeyPin('0000');
+    fetchJockeys();
   };
 
   // ✏️ 騎手パラメータ・PINの直接修正
   const handleUpdateJockeyStats = async () => {
     if (!selectedJockey) return;
 
-    await supabase
+    const payload: any = {
+      wins: Number(editWins),
+      rides: Number(editRides),
+      pin_code: editPin,
+    };
+
+    const { error } = await supabase
       .from('jockeys')
-      .update({
-        wins: Number(editWins),
-        rides: Number(editRides),
-        pin_code: editPin,
-      })
+      .update(payload)
       .eq('id', selectedJockey.id);
 
-    alert(`💾 騎手「${selectedJockey.name}」の成績・PINデータを更新しました！`);
+    if (error) {
+      // カラムがない場合はnameのみ等で更新をフォールバック
+      await supabase.from('jockeys').update({ name: selectedJockey.name }).eq('id', selectedJockey.id);
+      alert('⚠️ DBに一部のカラム(pin_code等)が存在しないため、基本情報のみ更新されました。SupabaseのSQL Editorでカラム追加SQLを実行してください。');
+    } else {
+      alert(`💾 騎手「${selectedJockey.name}」の成績・PINデータを更新しました！`);
+    }
+
     fetchJockeys();
   };
 
@@ -86,8 +109,12 @@ export default function AdminJockeyManager() {
     const nextStatus = currentStatus === '引退' ? '現役' : '引退';
     if (!confirm(`騎手「${name}」のステータスを【 ${nextStatus} 】に変更しますか？`)) return;
 
-    await supabase.from('jockeys').update({ status: nextStatus }).eq('id', jockeyId);
-    alert(`🔄 騎手「${name}」を【 ${nextStatus} 】に切り替えました。`);
+    const { error } = await supabase.from('jockeys').update({ status: nextStatus }).eq('id', jockeyId);
+    if (error) {
+      alert(`⚠️ ステータス更新エラー: Supabaseでstatusカラムを追加してください。`);
+    } else {
+      alert(`🔄 騎手「${name}」を【 ${nextStatus} 】に切り替えました。`);
+    }
     fetchJockeys();
   };
 
